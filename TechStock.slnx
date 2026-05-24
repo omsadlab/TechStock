@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TechStock.API/TechStock.API.csproj" />
+    <Project Path="src/TechStock.Application/TechStock.Application.csproj" />
+    <Project Path="src/TechStock.Blazor/TechStock.Blazor.csproj" />
+    <Project Path="src/TechStock.Domain/TechStock.Domain.csproj" />
+    <Project Path="src/TechStock.Infrastructure/TechStock.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TechStock.API.Tests/TechStock.API.Tests.csproj" />
+    <Project Path="tests/TechStock.Application.Tests/TechStock.Application.Tests.csproj" />
+  </Folder>
+</Solution>

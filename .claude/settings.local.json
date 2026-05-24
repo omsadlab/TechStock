@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"D:\\\\OmSadLabs\\\\Projects\\\\TechStock\\\\src\\\\TechStock.Infrastructure\" -Recurse | Select-Object FullName | Where-Object { $_.FullName -match \"[Mm]igration\" })"
+    ]
+  }
+}

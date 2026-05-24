@@ -1,0 +1,17 @@
+@inject MudBlazor.IDialogService DialogService
+
+@code {
+    [CascadingParameter] private MudBlazor.MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string Message { get; set; } = "Are you sure?";
+
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+    private void Cancel() => MudDialog.Cancel();
+}
+
+<MudDialogContent>
+    <MudText>@Message</MudText>
+</MudDialogContent>
+<MudDialogActions>
+    <MudButton OnClick="Cancel">Cancel</MudButton>
+    <MudButton Color="Color.Error" OnClick="Confirm">Confirm</MudButton>
+</MudDialogActions>

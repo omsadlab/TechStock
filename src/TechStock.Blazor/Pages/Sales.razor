@@ -1,0 +1,75 @@
+@page "/sales"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+
+<MudText Typo="Typo.h4" Class="mb-4">Sales</MudText>
+
+<MudStack Row="true" Class="mb-3">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick='() => Nav.NavigateTo("/sales/new")'>
+        New Sale
+    </MudButton>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="_sales" Hover="true" Dense="true">
+        <HeaderContent>
+            <MudTh>Invoice</MudTh>
+            <MudTh>Date</MudTh>
+            <MudTh>Customer</MudTh>
+            <MudTh>Total</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.InvoiceNumber</MudTd>
+            <MudTd>@context.SaleDate.ToString("dd MMM yyyy")</MudTd>
+            <MudTd>@(context.CustomerName ?? "Walk-in")</MudTd>
+            <MudTd>LKR @context.TotalLKR.ToString("N0")</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               OnClick='() => Nav.NavigateTo($"/sales/{context.Id}")' />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    <MudPagination Count="_totalPages" SelectedChanged="OnPageChanged" Class="mt-3" />
+}
+
+@code {
+    private List<SaleDto> _sales = [];
+    private bool _loading = true;
+    private int _page = 1;
+    private int _totalPages = 1;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Api.GetAsync<PagedResult<SaleDto>>($"api/sales?page={_page}&pageSize=20");
+            if (result != null) { _sales = result.Items; _totalPages = result.TotalPages; }
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page) { _page = page; await LoadAsync(); }
+
+    private class SaleDto
+    {
+        public Guid Id { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public DateTime SaleDate { get; set; }
+        public string? CustomerName { get; set; }
+        public decimal TotalLKR { get; set; }
+    }
+
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; public int TotalPages { get; set; } }
+}

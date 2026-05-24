@@ -1,0 +1,121 @@
+@page "/inventory"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+
+<MudText Typo="Typo.h4" Class="mb-4">Inventory</MudText>
+
+<MudGrid Class="mb-3">
+    <MudItem xs="12" sm="6" md="4">
+        <MudTextField Value="_search" Label="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Immediate="true"
+                      ValueChanged="@((string v) => { _search = v; _ = LoadAsync(); })" />
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <AuthorizeView Roles="Admin,Manager">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick='() => Nav.NavigateTo("/inventory/add")'>
+                    Add Product
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </MudItem>
+</MudGrid>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    @* Desktop *@
+    <MudHidden Breakpoint="Breakpoint.SmAndDown">
+        <MudTable Items="_products" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Brand</MudTh>
+                <MudTh>Type</MudTh>
+                <MudTh>Stock</MudTh>
+                <MudTh>Selling Price</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Name</MudTd>
+                <MudTd>@context.BrandName</MudTd>
+                <MudTd>@context.ProductTypeName</MudTd>
+                <MudTd><StockBadge Stock="@context.TotalStock" /></MudTd>
+                <MudTd>@(context.SellingPriceLKR.HasValue ? $"LKR {context.SellingPriceLKR:N0}" : "—")</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   OnClick='() => Nav.NavigateTo($"/inventory/{context.Id}")' />
+                    @{var productId = context.Id;}
+                    <AuthorizeView Roles="Admin,Manager" Context="authCtx">
+                        <Authorized>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick='() => Nav.NavigateTo($"/inventory/{productId}/edit")' />
+                        </Authorized>
+                    </AuthorizeView>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudHidden>
+
+    @* Mobile cards *@
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        @foreach (var p in _products)
+        {
+            <MudCard Class="mb-2" @onclick='() => Nav.NavigateTo($"/inventory/{p.Id}")' Style="cursor:pointer;">
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle1">@p.Name</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@p.BrandName · @p.ProductTypeName</MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-1">
+                        <StockBadge Stock="@p.TotalStock" />
+                        <MudText>@(p.SellingPriceLKR.HasValue ? $"LKR {p.SellingPriceLKR:N0}" : "—")</MudText>
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+        }
+    </MudHidden>
+
+    <MudPagination Count="_totalPages" SelectedChanged="OnPageChanged" Class="mt-3" />
+}
+
+@code {
+    private List<ProductDto> _products = [];
+    private bool _loading = true;
+    private string _search = string.Empty;
+    private int _page = 1;
+    private int _totalPages = 1;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var url = $"api/products?page={_page}&pageSize=20";
+            if (!string.IsNullOrEmpty(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
+            var result = await Api.GetAsync<PagedResult<ProductDto>>(url);
+            if (result != null) { _products = result.Items; _totalPages = result.TotalPages; }
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page) { _page = page; await LoadAsync(); }
+
+    private class ProductDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string ProductTypeName { get; set; } = string.Empty;
+        public int TotalStock { get; set; }
+        public decimal? SellingPriceLKR { get; set; }
+    }
+
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; public int TotalPages { get; set; } }
+}

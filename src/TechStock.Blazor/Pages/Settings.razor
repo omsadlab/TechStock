@@ -1,0 +1,58 @@
+@page "/settings"
+@attribute [Authorize(Roles = "Admin")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Settings</MudText>
+
+@if (_loading) { <MudProgressLinear Indeterminate="true" /> }
+else
+{
+    <MudCard>
+        <MudCardContent>
+            @foreach (var setting in _settings)
+            {
+                <MudGrid AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudItem xs="4"><MudText Typo="Typo.body1"><strong>@setting.Key</strong></MudText></MudItem>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="setting.Value" Variant="Variant.Outlined" Dense="true" />
+                    </MudItem>
+                    <MudItem xs="2">
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick='() => SaveSetting(setting)'>
+                            Save
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    private List<SettingDto> _settings = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _settings = await Api.GetAsync<List<SettingDto>>("api/settings") ?? []; }
+        finally { _loading = false; }
+    }
+
+    private async Task SaveSetting(SettingDto setting)
+    {
+        try
+        {
+            await Api.PutAsync($"api/settings/{setting.Key}", new { Value = setting.Value });
+            Snackbar.Add($"{setting.Key} updated.", Severity.Success);
+        }
+        catch { Snackbar.Add("Failed to save.", Severity.Error); }
+    }
+
+    private class SettingDto
+    {
+        public Guid Id { get; set; }
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+}

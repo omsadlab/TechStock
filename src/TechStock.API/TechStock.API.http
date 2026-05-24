@@ -1,0 +1,6 @@
+@TechStock.API_HostAddress = http://localhost:5030
+
+GET {{TechStock.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

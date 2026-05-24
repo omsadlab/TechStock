@@ -1,0 +1,27 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/inventory" Icon="@Icons.Material.Filled.Inventory">Inventory</MudNavLink>
+
+    <AuthorizeView Roles="Admin,Manager">
+        <Authorized>
+            <MudNavLink Href="/batches" Icon="@Icons.Material.Filled.Inbox">Batches</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <MudNavLink Href="/sales" Icon="@Icons.Material.Filled.ShoppingCart">Sales</MudNavLink>
+
+    <AuthorizeView Roles="Admin,Manager">
+        <Authorized>
+            <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.BarChart">Reports</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="Admin">
+        <Authorized>
+            <MudNavLink Href="/users" Icon="@Icons.Material.Filled.People">Users</MudNavLink>
+            <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+</MudNavMenu>

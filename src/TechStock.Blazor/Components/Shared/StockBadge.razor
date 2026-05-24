@@ -1,0 +1,9 @@
+@code {
+    [Parameter] public int Stock { get; set; }
+    [Parameter] public int LowThreshold { get; set; } = 5;
+
+    private Color BadgeColor => Stock == 0 ? Color.Error : Stock <= LowThreshold ? Color.Warning : Color.Success;
+    private string Label => Stock == 0 ? "Out of Stock" : Stock <= LowThreshold ? $"Low ({Stock})" : Stock.ToString();
+}
+
+<MudChip T="string" Color="@BadgeColor" Size="Size.Small">@Label</MudChip>

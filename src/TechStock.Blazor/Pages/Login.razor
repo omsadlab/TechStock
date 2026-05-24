@@ -1,0 +1,51 @@
+@page "/login"
+@layout EmptyLayout
+@inject TechStock.Blazor.Services.BlazorAuthService AuthSvc
+@inject NavigationManager Nav
+
+<MudGrid Justify="Justify.Center" Style="min-height:100vh;align-items:center;">
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h5">TechStock — Sign In</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTextField @bind-Value="_email" Label="Email" Variant="Variant.Outlined" InputType="InputType.Email" Class="mb-3" />
+                <MudTextField @bind-Value="_password" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" Class="mb-3" />
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+                }
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                           OnClick="DoLogin" Disabled="_loading">
+                    @if (_loading) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> } else { <span>Sign In</span> }
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _email = "admin@techstock.lk";
+    private string _password = "Admin@123!";
+    private string _error = string.Empty;
+    private bool _loading;
+
+    private async Task DoLogin()
+    {
+        _loading = true;
+        _error = string.Empty;
+        try
+        {
+            var success = await AuthSvc.LoginAsync(_email, _password);
+            if (success) Nav.NavigateTo("/");
+            else _error = "Invalid email or password.";
+        }
+        catch { _error = "Login failed. Please try again."; }
+        finally { _loading = false; }
+    }
+}

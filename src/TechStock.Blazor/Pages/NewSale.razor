@@ -1,0 +1,169 @@
+@page "/sales/new"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">New Sale</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="4">
+        <MudTextField @bind-Value="_customerName" Label="Customer Name (optional)" Variant="Variant.Outlined" Class="mb-2" />
+        <MudTextField @bind-Value="_customerPhone" Label="Customer Phone (optional)" Variant="Variant.Outlined" Class="mb-2" />
+        <MudTextField @bind-Value="_discountLKR" Label="Overall Discount (LKR)" Variant="Variant.Outlined"
+                      InputType="InputType.Number" Class="mb-2" />
+    </MudItem>
+
+    <MudItem xs="12" md="8">
+        <MudText Typo="Typo.h6" Class="mb-2">Add Items</MudText>
+        <MudAutocomplete T="BatchItemDto" Label="Search product..." Variant="Variant.Outlined"
+                         SearchFunc="SearchBatchItems" ToStringFunc="@(i => i?.ProductName ?? "")"
+                         ValueChanged="AddToCart" Class="mb-3" />
+
+        @if (_cart.Any())
+        {
+            <MudTable Items="_cart" Dense="true">
+                <HeaderContent>
+                    <MudTh>Product</MudTh>
+                    <MudTh>Price</MudTh>
+                    <MudTh>Qty</MudTh>
+                    <MudTh>Total</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.ProductName</MudTd>
+                    <MudTd>LKR @context.SellingPriceLKR.ToString("N0")</MudTd>
+                    <MudTd>
+                        <MudNumericField @bind-Value="context.Qty" Min="1" Max="@context.RemainingQty"
+                                         Variant="Variant.Text" Style="width:60px" />
+                    </MudTd>
+                    <MudTd>LKR @((context.SellingPriceLKR * context.Qty).ToString("N0"))</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick='() => _cart.Remove(context)' />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                <MudText Typo="Typo.h6">Subtotal: LKR @Subtotal.ToString("N0")</MudText>
+            </MudStack>
+            <MudStack Row="true" Justify="Justify.FlexEnd">
+                <MudText Typo="Typo.h5">Total: LKR @Total.ToString("N0")</MudText>
+            </MudStack>
+
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="CreateSale" Disabled="_saving">
+                    @(_saving ? "Processing..." : "Complete Sale")
+                </MudButton>
+            </MudStack>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string? _customerName;
+    private string? _customerPhone;
+    private decimal _discountLKR;
+    private bool _saving;
+    private readonly List<CartItem> _cart = [];
+
+    private decimal Subtotal => _cart.Sum(i => i.SellingPriceLKR * i.Qty);
+    private decimal Total => Subtotal - _discountLKR;
+
+    private async Task<IEnumerable<BatchItemDto>> SearchBatchItems(string search, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return [];
+        var result = await Api.GetAsync<PagedResult<ProductDto>>(
+            $"api/products?search={Uri.EscapeDataString(search)}&pageSize=10");
+        if (result == null) return [];
+
+        var batchItems = new List<BatchItemDto>();
+        foreach (var p in result.Items.Where(p => p.TotalStock > 0))
+        {
+            var stockData = await Api.GetAsync<BatchItemListResult>(
+                $"api/batches?pageSize=50");
+            batchItems.Add(new BatchItemDto
+            {
+                ProductId = p.Id,
+                ProductName = p.Name,
+                SellingPriceLKR = p.SellingPriceLKR ?? 0,
+                RemainingQty = p.TotalStock
+            });
+        }
+        return batchItems;
+    }
+
+    private void AddToCart(BatchItemDto? item)
+    {
+        if (item == null) return;
+        var existing = _cart.FirstOrDefault(c => c.ProductId == item.ProductId);
+        if (existing != null) existing.Qty = Math.Min(existing.Qty + 1, item.RemainingQty);
+        else _cart.Add(new CartItem
+        {
+            BatchItemId = item.BatchItemId,
+            ProductId = item.ProductId,
+            ProductName = item.ProductName,
+            SellingPriceLKR = item.SellingPriceLKR,
+            RemainingQty = item.RemainingQty,
+            Qty = 1
+        });
+    }
+
+    private async Task CreateSale()
+    {
+        if (!_cart.Any()) return;
+        _saving = true;
+        try
+        {
+            var request = new
+            {
+                CustomerName = _customerName,
+                CustomerPhone = _customerPhone,
+                DiscountLKR = _discountLKR,
+                Items = _cart.Select(i => new { BatchItemId = i.BatchItemId, Quantity = i.Qty, Discount = 0m })
+            };
+
+            var sale = await Api.PostAsync<SaleResult>("api/sales", request);
+            Snackbar.Add("Sale created successfully!", Severity.Success);
+            if (sale != null) Nav.NavigateTo($"/sales/{sale.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+
+    private class CartItem
+    {
+        public Guid BatchItemId { get; set; }
+        public Guid ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public decimal SellingPriceLKR { get; set; }
+        public int RemainingQty { get; set; }
+        public int Qty { get; set; }
+    }
+
+    private class BatchItemDto
+    {
+        public Guid BatchItemId { get; set; }
+        public Guid ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public decimal SellingPriceLKR { get; set; }
+        public int RemainingQty { get; set; }
+    }
+
+    private class ProductDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int TotalStock { get; set; }
+        public decimal? SellingPriceLKR { get; set; }
+    }
+
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; }
+    private class BatchItemListResult { }
+    private record SaleResult(Guid Id);
+}

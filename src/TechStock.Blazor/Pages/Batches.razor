@@ -1,0 +1,75 @@
+@page "/batches"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+
+<MudText Typo="Typo.h4" Class="mb-4">Batches</MudText>
+
+<MudStack Row="true" Class="mb-3">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick='() => Nav.NavigateTo("/batches/new")'>
+        New Batch
+    </MudButton>
+</MudStack>
+
+@if (_loading) { <MudProgressLinear Indeterminate="true" /> }
+else
+{
+    <MudTable Items="_batches" Hover="true" Dense="true">
+        <HeaderContent>
+            <MudTh>Batch No</MudTh>
+            <MudTh>Supplier</MudTh>
+            <MudTh>Purchase Date</MudTh>
+            <MudTh>Exchange Rate</MudTh>
+            <MudTh>Total Cost (LKR)</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.BatchNumber</MudTd>
+            <MudTd>@context.Supplier</MudTd>
+            <MudTd>@context.PurchaseDate.ToString("dd MMM yyyy")</MudTd>
+            <MudTd>@context.ExchangeRate.ToString("N4")</MudTd>
+            <MudTd>LKR @context.TotalCostLKR.ToString("N0")</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               OnClick='() => Nav.NavigateTo($"/batches/{context.Id}")' />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    <MudPagination Count="_totalPages" SelectedChanged="OnPageChanged" Class="mt-3" />
+}
+
+@code {
+    private List<BatchDto> _batches = [];
+    private bool _loading = true;
+    private int _page = 1;
+    private int _totalPages = 1;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Api.GetAsync<PagedResult<BatchDto>>($"api/batches?page={_page}&pageSize=20");
+            if (result != null) { _batches = result.Items; _totalPages = result.TotalPages; }
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page) { _page = page; await LoadAsync(); }
+
+    private class BatchDto
+    {
+        public Guid Id { get; set; }
+        public string BatchNumber { get; set; } = string.Empty;
+        public string Supplier { get; set; } = string.Empty;
+        public DateTime PurchaseDate { get; set; }
+        public decimal ExchangeRate { get; set; }
+        public decimal TotalCostLKR { get; set; }
+    }
+
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; public int TotalPages { get; set; } }
+}

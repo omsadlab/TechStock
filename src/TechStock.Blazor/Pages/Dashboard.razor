@@ -1,0 +1,98 @@
+@page "/"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+
+<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_dashboard != null)
+{
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Stock Items</MudText>
+                    <MudText Typo="Typo.h4">@_dashboard.TotalStockItems</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Today's Sales</MudText>
+                    <MudText Typo="Typo.h4">LKR @_dashboard.TodaySalesLKR.ToString("N0")</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Low Stock Items</MudText>
+                    <MudText Typo="Typo.h4" Color="@(_dashboard.LowStockCount > 0 ? Color.Warning : Color.Default)">
+                        @_dashboard.LowStockCount
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard>
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Pending Batches</MudText>
+                    <MudText Typo="Typo.h4">@_dashboard.PendingBatchesCount</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid Class="mt-4">
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.h6" Class="mb-2">Recent Sales</MudText>
+            <MudTable Items="_dashboard.RecentSales" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Invoice</MudTh>
+                    <MudTh>Customer</MudTh>
+                    <MudTh>Total</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.InvoiceNumber</MudTd>
+                    <MudTd>@(context.CustomerName ?? "Walk-in")</MudTd>
+                    <MudTd>LKR @context.TotalLKR.ToString("N0")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.h6" Class="mb-2">Low Stock Alerts</MudText>
+            <MudTable Items="_dashboard.LowStockItems" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Product</MudTh>
+                    <MudTh>Brand</MudTh>
+                    <MudTh>Stock</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.ProductName</MudTd>
+                    <MudTd>@context.BrandName</MudTd>
+                    <MudTd><StockBadge Stock="@context.TotalStock" /></MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private DashboardDto? _dashboard;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _dashboard = await Api.GetAsync<DashboardDto>("api/reports/dashboard"); }
+        finally { _loading = false; }
+    }
+
+    private record DashboardDto(int TotalStockItems, decimal TodaySalesLKR, int LowStockCount,
+        int PendingBatchesCount, List<RecentSaleDto> RecentSales, List<LowStockItemDto> LowStockItems);
+    private record RecentSaleDto(Guid Id, string InvoiceNumber, DateTime SaleDate, decimal TotalLKR, string? CustomerName);
+    private record LowStockItemDto(Guid ProductId, string ProductName, string BrandName, int TotalStock);
+}

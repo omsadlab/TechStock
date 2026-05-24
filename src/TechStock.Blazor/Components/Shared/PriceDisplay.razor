@@ -1,0 +1,14 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
+<AuthorizeView Roles="Admin,Manager">
+    <Authorized>
+        <span>@(Price.HasValue ? $"LKR {Price:N0}" : "—")</span>
+    </Authorized>
+    <NotAuthorized>
+        <span>—</span>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public decimal? Price { get; set; }
+}

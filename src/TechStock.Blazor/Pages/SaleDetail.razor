@@ -1,0 +1,97 @@
+@page "/sales/{Id:guid}"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick='() => Nav.NavigateTo("/sales")' />
+    <MudText Typo="Typo.h4">Sale Detail</MudText>
+</MudStack>
+
+@if (_loading) { <MudProgressLinear Indeterminate="true" /> }
+else if (_sale != null)
+{
+    <MudCard Class="mb-3">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="6"><MudText><strong>Invoice:</strong> @_sale.InvoiceNumber</MudText></MudItem>
+                <MudItem xs="6"><MudText><strong>Date:</strong> @_sale.SaleDate.ToString("dd MMM yyyy")</MudText></MudItem>
+                <MudItem xs="6"><MudText><strong>Customer:</strong> @(_sale.CustomerName ?? "Walk-in")</MudText></MudItem>
+                <MudItem xs="6"><MudText><strong>Phone:</strong> @(_sale.CustomerPhone ?? "—")</MudText></MudItem>
+            </MudGrid>
+        </MudCardContent>
+    </MudCard>
+
+    <MudTable Items="_sale.Items" Dense="true" Class="mb-3">
+        <HeaderContent>
+            <MudTh>Product</MudTh>
+            <MudTh>Qty</MudTh>
+            <MudTh>Unit Price</MudTh>
+            <MudTh>Total</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.ProductName</MudTd>
+            <MudTd>@context.Quantity</MudTd>
+            <MudTd>LKR @context.UnitSellingPrice.ToString("N0")</MudTd>
+            <MudTd>LKR @context.LineTotal.ToString("N0")</MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    <MudStack AlignItems="AlignItems.End" Class="mb-3">
+        <MudText>Subtotal: LKR @_sale.SubtotalLKR.ToString("N0")</MudText>
+        <MudText>Discount: LKR @_sale.DiscountLKR.ToString("N0")</MudText>
+        <MudText Typo="Typo.h5"><strong>Total: LKR @_sale.TotalLKR.ToString("N0")</strong></MudText>
+    </MudStack>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Print"
+               OnClick="PrintInvoice">
+        Print Invoice
+    </MudButton>
+
+    <iframe id="invoice-frame" src="@_invoiceUrl" style="display:none;width:100%;height:600px;"></iframe>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private SaleDto? _sale;
+    private bool _loading = true;
+    private string _invoiceUrl = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _sale = await Api.GetAsync<SaleDto>($"api/sales/{Id}"); }
+        finally { _loading = false; }
+    }
+
+    private async Task PrintInvoice()
+    {
+        _invoiceUrl = $"api/sales/{Id}/invoice";
+        StateHasChanged();
+        await Task.Delay(500);
+        await JS.InvokeVoidAsync("printIframe", "invoice-frame");
+    }
+
+    private class SaleDto
+    {
+        public Guid Id { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public DateTime SaleDate { get; set; }
+        public string? CustomerName { get; set; }
+        public string? CustomerPhone { get; set; }
+        public decimal SubtotalLKR { get; set; }
+        public decimal DiscountLKR { get; set; }
+        public decimal TotalLKR { get; set; }
+        public List<SaleItemDto> Items { get; set; } = [];
+    }
+
+    private class SaleItemDto
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal UnitSellingPrice { get; set; }
+        public decimal LineTotal { get; set; }
+    }
+}
