@@ -11,7 +11,9 @@ public class BatchItem : BaseEntity
     public decimal UnitCostLKR { get; set; }
     public decimal SellingPriceLKR { get; set; }
     public int RemainingQty { get; set; }
+    public string? Barcode { get; set; }
 
     public ICollection<SaleItem> SaleItems { get; set; } = [];
     public ICollection<StockAdjustment> Adjustments { get; set; } = [];
+    public ICollection<BatchItemWarrantyOption> WarrantyOptions { get; set; } = [];
 }

@@ -8,36 +8,133 @@
 
 <MudGrid>
     <MudItem xs="12" md="4">
-        <MudTextField @bind-Value="_customerName" Label="Customer Name (optional)" Variant="Variant.Outlined" Class="mb-2" />
-        <MudTextField @bind-Value="_customerPhone" Label="Customer Phone (optional)" Variant="Variant.Outlined" Class="mb-2" />
-        <MudTextField @bind-Value="_discountLKR" Label="Overall Discount (LKR)" Variant="Variant.Outlined"
-                      InputType="InputType.Number" Class="mb-2" />
+        <MudTextField @bind-Value="_customerName" Label="Customer Name (optional)"
+                      Variant="Variant.Outlined" Class="mb-2" />
+        <MudTextField @bind-Value="_customerPhone" Label="Customer Phone (optional)"
+                      Variant="Variant.Outlined" Class="mb-2" />
+        <MudNumericField @bind-Value="_discountLKR" Label="Overall Discount"
+                         Variant="Variant.Outlined" Min="0" Class="mb-2" />
     </MudItem>
 
     <MudItem xs="12" md="8">
         <MudText Typo="Typo.h6" Class="mb-2">Add Items</MudText>
-        <MudAutocomplete T="BatchItemDto" Label="Search product..." Variant="Variant.Outlined"
-                         SearchFunc="SearchBatchItems" ToStringFunc="@(i => i?.ProductName ?? "")"
-                         ValueChanged="AddToCart" Class="mb-3" />
+
+        <MudGrid Class="mb-2">
+            <MudItem xs="12" sm="5">
+                <MudAutocomplete T="ProductOption" Label="1. Search product (optional filter)"
+                                 Variant="Variant.Outlined"
+                                 SearchFunc="SearchProducts"
+                                 ToStringFunc="@(p => p?.Label ?? "")"
+                                 ValueChanged="OnProductSelected"
+                                 ResetValueOnEmptyText="true" />
+            </MudItem>
+            <MudItem xs="12" sm="5">
+                <MudTextField @bind-Value="_barcodeInput"
+                              Label="2. Scan / type barcode + Enter"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              OnAdornmentClick="LookupBarcode"
+                              OnKeyDown="OnBarcodeKeyDown"
+                              Disabled="_scanning" />
+            </MudItem>
+            <MudItem xs="12" sm="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Outlined" FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.List"
+                           OnClick="OpenBrowseDialog">
+                    Browse
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+
+        @if (_scanning)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mb-2" />
+        }
+        @if (_scanError != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@_scanError</MudAlert>
+        }
+
+        @if (_scannedItem != null)
+        {
+            <MudPaper Class="pa-3 mb-3" Outlined="true">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">@_scannedItem.ProductName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @_scannedItem.BrandName · Batch: @_scannedItem.BatchNumber · Code: @_scannedItem.Barcode
+                        </MudText>
+                    </div>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(_scannedItem.RemainingQty > 0 ? Color.Success : Color.Error)">
+                        Stock: @_scannedItem.RemainingQty
+                    </MudChip>
+                </MudStack>
+                <MudGrid>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField @bind-Value="_addQty" Label="Qty" Min="1" Max="@_scannedItem.RemainingQty"
+                                         Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField @bind-Value="_addPrice"
+                                         Label="@($"Price ({_scannedItem.SellingCurrency})")"
+                                         Min="0" Format="N0" Variant="Variant.Outlined" />
+                    </MudItem>
+                    @if (_scannedItem.WarrantyOptions.Count > 0)
+                    {
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="WarrantyOptionItem?" Value="_selectedWarrantyOption"
+                                       ValueChanged="OnWarrantySelected"
+                                       Label="Warranty Period" Variant="Variant.Outlined" Clearable="true">
+                                @foreach (var wo in _scannedItem.WarrantyOptions)
+                                {
+                                    <MudSelectItem T="WarrantyOptionItem?" Value="wo">@wo.WarrantyMonths months — LKR @wo.SellingPriceLKR.ToString("N0")</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    }
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField @bind-Value="_addDiscount" Label="Item Discount" Min="0"
+                                         Format="N0" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3" Class="d-flex align-end">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                                   OnClick="AddScannedToCart"
+                                   Disabled="@(_scannedItem.RemainingQty == 0)">
+                            Add to Cart
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        }
 
         @if (_cart.Any())
         {
             <MudTable Items="_cart" Dense="true">
                 <HeaderContent>
                     <MudTh>Product</MudTh>
-                    <MudTh>Price</MudTh>
+                    <MudTh>Barcode</MudTh>
+                    <MudTh>Batch</MudTh>
+                    <MudTh>Warranty</MudTh>
                     <MudTh>Qty</MudTh>
-                    <MudTh>Total</MudTh>
+                    <MudTh>Unit Price</MudTh>
+                    <MudTh>Discount</MudTh>
+                    <MudTh>Line Total</MudTh>
                     <MudTh></MudTh>
                 </HeaderContent>
                 <RowTemplate>
-                    <MudTd>@context.ProductName</MudTd>
-                    <MudTd>LKR @context.SellingPriceLKR.ToString("N0")</MudTd>
                     <MudTd>
-                        <MudNumericField @bind-Value="context.Qty" Min="1" Max="@context.RemainingQty"
-                                         Variant="Variant.Text" Style="width:60px" />
+                        <MudText Typo="Typo.body2">@context.ProductName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.BrandName</MudText>
                     </MudTd>
-                    <MudTd>LKR @((context.SellingPriceLKR * context.Qty).ToString("N0"))</MudTd>
+                    <MudTd><MudText Typo="Typo.caption" Style="font-family:monospace">@context.Barcode</MudText></MudTd>
+                    <MudTd><MudText Typo="Typo.caption">@context.BatchNumber</MudText></MudTd>
+                    <MudTd><MudText Typo="Typo.caption">@(context.WarrantyMonths.HasValue ? $"{context.WarrantyMonths} mo." : "—")</MudText></MudTd>
+                    <MudTd>@context.Qty</MudTd>
+                    <MudTd>@context.SellingCurrency @context.UnitSellingPrice.ToString("N0")</MudTd>
+                    <MudTd>@(context.Discount > 0 ? context.Discount.ToString("N0") : "—")</MudTd>
+                    <MudTd>@context.SellingCurrency @context.LineTotal.ToString("N0")</MudTd>
                     <MudTd>
                         <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
                                        Color="Color.Error" OnClick='() => _cart.Remove(context)' />
@@ -46,15 +143,24 @@
             </MudTable>
 
             <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
-                <MudText Typo="Typo.h6">Subtotal: LKR @Subtotal.ToString("N0")</MudText>
+                <MudText Typo="Typo.h6">Subtotal: @SubtotalCurrency @Subtotal.ToString("N0")</MudText>
             </MudStack>
+            @if (_discountLKR > 0)
+            {
+                <MudStack Row="true" Justify="Justify.FlexEnd">
+                    <MudText Typo="Typo.body1" Color="Color.Secondary">
+                        Discount: − @SubtotalCurrency @_discountLKR.ToString("N0")
+                    </MudText>
+                </MudStack>
+            }
             <MudStack Row="true" Justify="Justify.FlexEnd">
-                <MudText Typo="Typo.h5">Total: LKR @Total.ToString("N0")</MudText>
+                <MudText Typo="Typo.h5">Total: @SubtotalCurrency @Total.ToString("N0")</MudText>
             </MudStack>
 
             <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-3">
+                <MudButton Variant="Variant.Outlined" OnClick='() => _cart.Clear()'>Clear</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                           OnClick="CreateSale" Disabled="_saving">
+                           OnClick="CreateSaleAsync" Disabled="_saving">
                     @(_saving ? "Processing..." : "Complete Sale")
                 </MudButton>
             </MudStack>
@@ -62,56 +168,217 @@
     </MudItem>
 </MudGrid>
 
+@* Browse Items Dialog *@
+<MudDialog @bind-Visible="_browseOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true }'>
+    <TitleContent><MudText Typo="Typo.h6">Browse Available Items</MudText></TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_browseSearch" Label="Search by product, brand or barcode"
+                      Variant="Variant.Outlined" Adornment="Adornment.End"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      OnAdornmentClick="BrowseSearchAsync"
+                      OnKeyDown="OnBrowseSearchKeyDown"
+                      Class="mb-3" />
+        @if (_browseLoading) { <MudProgressLinear Indeterminate="true" /> }
+        else if (_browseItems.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">No items found.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_browseItems" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Product</MudTh>
+                    <MudTh>Brand</MudTh>
+                    <MudTh>Barcode</MudTh>
+                    <MudTh>Batch</MudTh>
+                    <MudTh>Stock</MudTh>
+                    <MudTh>Price</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.ProductName</MudTd>
+                    <MudTd>@context.BrandName</MudTd>
+                    <MudTd><MudText Typo="Typo.caption" Style="font-family:monospace">@context.Barcode</MudText></MudTd>
+                    <MudTd>@context.BatchNumber</MudTd>
+                    <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Success">@context.RemainingQty</MudChip></MudTd>
+                    <MudTd>@context.SellingCurrency @context.SellingPrice.ToString("N0")</MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick='() => SelectBrowsedItem(context)'>Select</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick='() => _browseOpen = false'>Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
+    private bool _saving;
     private string? _customerName;
     private string? _customerPhone;
     private decimal _discountLKR;
-    private bool _saving;
+
+    private ProductOption? _selectedProduct;
+    private string _barcodeInput = string.Empty;
+    private bool _scanning;
+    private string? _scanError;
+    private BatchItemScanDto? _scannedItem;
+
+    private int _addQty = 1;
+    private decimal _addPrice;
+    private decimal _addDiscount;
+    private int? _selectedWarrantyMonths;
+    private WarrantyOptionItem? _selectedWarrantyOption;
+
     private readonly List<CartItem> _cart = [];
 
-    private decimal Subtotal => _cart.Sum(i => i.SellingPriceLKR * i.Qty);
-    private decimal Total => Subtotal - _discountLKR;
+    private bool _browseOpen;
+    private string _browseSearch = string.Empty;
+    private bool _browseLoading;
+    private List<BatchItemScanDto> _browseItems = [];
 
-    private async Task<IEnumerable<BatchItemDto>> SearchBatchItems(string search, CancellationToken ct)
+    private string SubtotalCurrency => _cart.FirstOrDefault()?.SellingCurrency ?? "LKR";
+    private decimal Subtotal => _cart.Sum(i => i.LineTotal);
+    private decimal Total => Math.Max(0, Subtotal - _discountLKR);
+
+    private async Task<IEnumerable<ProductOption>> SearchProducts(string search, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(search)) return [];
-        var result = await Api.GetAsync<PagedResult<ProductDto>>(
-            $"api/products?search={Uri.EscapeDataString(search)}&pageSize=10");
-        if (result == null) return [];
-
-        var batchItems = new List<BatchItemDto>();
-        foreach (var p in result.Items.Where(p => p.TotalStock > 0))
-        {
-            var stockData = await Api.GetAsync<BatchItemListResult>(
-                $"api/batches?pageSize=50");
-            batchItems.Add(new BatchItemDto
-            {
-                ProductId = p.Id,
-                ProductName = p.Name,
-                SellingPriceLKR = p.SellingPriceLKR ?? 0,
-                RemainingQty = p.TotalStock
-            });
-        }
-        return batchItems;
+        var result = await Api.GetAsync<PagedResult<ProductOption>>(
+            $"api/products?search={Uri.EscapeDataString(search)}&pageSize=20");
+        return result?.Items ?? [];
     }
 
-    private void AddToCart(BatchItemDto? item)
+    private void OnProductSelected(ProductOption? product)
     {
-        if (item == null) return;
-        var existing = _cart.FirstOrDefault(c => c.ProductId == item.ProductId);
-        if (existing != null) existing.Qty = Math.Min(existing.Qty + 1, item.RemainingQty);
-        else _cart.Add(new CartItem
-        {
-            BatchItemId = item.BatchItemId,
-            ProductId = item.ProductId,
-            ProductName = item.ProductName,
-            SellingPriceLKR = item.SellingPriceLKR,
-            RemainingQty = item.RemainingQty,
-            Qty = 1
-        });
+        _selectedProduct = product;
+        _scannedItem = null;
+        _scanError = null;
     }
 
-    private async Task CreateSale()
+    private async Task OnBarcodeKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LookupBarcode();
+    }
+
+    private async Task LookupBarcode()
+    {
+        if (string.IsNullOrWhiteSpace(_barcodeInput)) return;
+        _scanning = true;
+        _scanError = null;
+        _scannedItem = null;
+        try
+        {
+            var item = await Api.GetAsync<BatchItemScanDto>(
+                $"api/batches/items/barcode/{Uri.EscapeDataString(_barcodeInput.Trim())}");
+            if (item == null)
+            {
+                _scanError = $"No item found for barcode \"{_barcodeInput.Trim()}\".";
+                return;
+            }
+            if (_selectedProduct != null && item.ProductId != _selectedProduct.Id)
+            {
+                _scanError = $"Barcode belongs to \"{item.ProductName}\", not the selected product.";
+                return;
+            }
+            if (item.RemainingQty <= 0)
+            {
+                _scanError = $"No stock remaining (Batch: {item.BatchNumber}).";
+                return;
+            }
+            _scannedItem = item;
+            _addQty = 1;
+            _addDiscount = 0;
+            var defaultWo = item.WarrantyOptions.FirstOrDefault(w => w.IsDefault)
+                            ?? item.WarrantyOptions.FirstOrDefault();
+            _selectedWarrantyOption = defaultWo;
+            _selectedWarrantyMonths = defaultWo?.WarrantyMonths;
+            _addPrice = defaultWo?.SellingPriceLKR ?? item.SellingPrice;
+        }
+        catch (Exception ex)
+        {
+            _scanError = $"Lookup failed: {ex.Message}";
+        }
+        finally { _scanning = false; }
+    }
+
+    private void AddScannedToCart()
+    {
+        if (_scannedItem == null || _addQty <= 0) return;
+        var lineTotal = (_addPrice * _addQty) - _addDiscount;
+        _cart.Add(new CartItem
+        {
+            BatchItemId = _scannedItem.BatchItemId,
+            ProductName = _scannedItem.ProductName,
+            BrandName = _scannedItem.BrandName,
+            BatchNumber = _scannedItem.BatchNumber,
+            Barcode = _scannedItem.Barcode,
+            SellingCurrency = _scannedItem.SellingCurrency,
+            Qty = _addQty,
+            UnitSellingPrice = _addPrice,
+            Discount = _addDiscount,
+            LineTotal = lineTotal,
+            WarrantyMonths = _selectedWarrantyMonths,
+        });
+        _scannedItem = null;
+        _barcodeInput = string.Empty;
+        _scanError = null;
+        _selectedWarrantyMonths = null;
+        _selectedWarrantyOption = null;
+    }
+
+    private async Task OpenBrowseDialog()
+    {
+        _browseSearch = string.Empty;
+        _browseOpen = true;
+        await BrowseSearchAsync();
+    }
+
+    private async Task OnBrowseSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await BrowseSearchAsync();
+    }
+
+    private async Task BrowseSearchAsync()
+    {
+        _browseLoading = true;
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(_browseSearch)
+                ? "api/batches/items/search"
+                : $"api/batches/items/search?q={Uri.EscapeDataString(_browseSearch.Trim())}";
+            _browseItems = await Api.GetAsync<List<BatchItemScanDto>>(url) ?? [];
+        }
+        catch { _browseItems = []; }
+        finally { _browseLoading = false; }
+    }
+
+    private void SelectBrowsedItem(BatchItemScanDto item)
+    {
+        _scannedItem = item;
+        _addQty = 1;
+        _addDiscount = 0;
+        var defaultWo = item.WarrantyOptions.FirstOrDefault(w => w.IsDefault)
+                        ?? item.WarrantyOptions.FirstOrDefault();
+        _selectedWarrantyOption = defaultWo;
+        _selectedWarrantyMonths = defaultWo?.WarrantyMonths;
+        _addPrice = defaultWo?.SellingPriceLKR ?? item.SellingPrice;
+        _barcodeInput = item.Barcode;
+        _scanError = null;
+        _browseOpen = false;
+    }
+
+    private void OnWarrantySelected(WarrantyOptionItem? wo)
+    {
+        _selectedWarrantyOption = wo;
+        _selectedWarrantyMonths = wo?.WarrantyMonths;
+        if (wo != null) _addPrice = wo.SellingPriceLKR;
+    }
+
+    private async Task CreateSaleAsync()
     {
         if (!_cart.Any()) return;
         _saving = true;
@@ -122,48 +389,70 @@
                 CustomerName = _customerName,
                 CustomerPhone = _customerPhone,
                 DiscountLKR = _discountLKR,
-                Items = _cart.Select(i => new { BatchItemId = i.BatchItemId, Quantity = i.Qty, Discount = 0m })
+                Items = _cart.Select(i => new
+                {
+                    BatchItemId = i.BatchItemId,
+                    Quantity = i.Qty,
+                    Discount = i.Discount,
+                    UnitSellingPrice = (decimal?)i.UnitSellingPrice,
+                    WarrantyMonths = i.WarrantyMonths,
+                })
             };
-
             var sale = await Api.PostAsync<SaleResult>("api/sales", request);
             Snackbar.Add("Sale created successfully!", Severity.Success);
             if (sale != null) Nav.NavigateTo($"/sales/{sale.Id}");
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
-        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
         finally { _saving = false; }
+    }
+
+    private class ProductOption
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string Label => $"{Name} ({BrandName})";
+        public override string ToString() => Label;
+    }
+
+    private class WarrantyOptionItem
+    {
+        public int WarrantyMonths { get; set; }
+        public decimal SellingPriceLKR { get; set; }
+        public bool IsDefault { get; set; }
+    }
+
+    private class BatchItemScanDto
+    {
+        public Guid BatchItemId { get; set; }
+        public Guid ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string BatchNumber { get; set; } = string.Empty;
+        public string PurchaseCurrency { get; set; } = "JPY";
+        public string SellingCurrency { get; set; } = "LKR";
+        public decimal ExchangeRate { get; set; }
+        public int RemainingQty { get; set; }
+        public decimal SellingPrice { get; set; }
+        public string Barcode { get; set; } = string.Empty;
+        public List<WarrantyOptionItem> WarrantyOptions { get; set; } = [];
     }
 
     private class CartItem
     {
         public Guid BatchItemId { get; set; }
-        public Guid ProductId { get; set; }
         public string ProductName { get; set; } = string.Empty;
-        public decimal SellingPriceLKR { get; set; }
-        public int RemainingQty { get; set; }
+        public string BrandName { get; set; } = string.Empty;
+        public string BatchNumber { get; set; } = string.Empty;
+        public string Barcode { get; set; } = string.Empty;
+        public string SellingCurrency { get; set; } = "LKR";
         public int Qty { get; set; }
-    }
-
-    private class BatchItemDto
-    {
-        public Guid BatchItemId { get; set; }
-        public Guid ProductId { get; set; }
-        public string ProductName { get; set; } = string.Empty;
-        public decimal SellingPriceLKR { get; set; }
-        public int RemainingQty { get; set; }
-    }
-
-    private class ProductDto
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public int TotalStock { get; set; }
-        public decimal? SellingPriceLKR { get; set; }
+        public decimal UnitSellingPrice { get; set; }
+        public decimal Discount { get; set; }
+        public decimal LineTotal { get; set; }
+        public int? WarrantyMonths { get; set; }
     }
 
     private class PagedResult<T> { public List<T> Items { get; set; } = []; }
-    private class BatchItemListResult { }
     private record SaleResult(Guid Id);
 }

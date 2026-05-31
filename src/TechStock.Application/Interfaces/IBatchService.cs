@@ -14,4 +14,6 @@ public interface IBatchService
     Task<BatchDto> UpdateItemAsync(Guid batchId, Guid itemId, UpdateBatchItemRequest request);
     Task DeleteItemAsync(Guid batchId, Guid itemId);
     Task UpdateSellingPriceAsync(Guid batchId, Guid itemId, decimal sellingPrice);
+    Task<BatchItemScanDto?> GetItemByBarcodeAsync(string barcode);
+    Task<List<BatchItemScanDto>> SearchAvailableItemsAsync(string? search);
 }

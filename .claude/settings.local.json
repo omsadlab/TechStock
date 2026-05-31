@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Get-ChildItem \"D:\\\\OmSadLabs\\\\Projects\\\\TechStock\\\\src\\\\TechStock.Infrastructure\" -Recurse | Select-Object FullName | Where-Object { $_.FullName -match \"[Mm]igration\" })"
+      "PowerShell(Get-ChildItem \"D:\\\\OmSadLabs\\\\Projects\\\\TechStock\\\\src\\\\TechStock.Infrastructure\" -Recurse | Select-Object FullName | Where-Object { $_.FullName -match \"[Mm]igration\" })",
+      "Bash(dotnet build *)",
+      "Bash(Get-ChildItem *)",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\OmSadLabs\\\\Projects\\\\TechStock\\\\src\\\\TechStock.Blazor\" -Recurse | Where-Object {$_.Extension -in '.razor', '.cs'} | Select-Object FullName | Sort-Object FullName)",
+      "Bash(Get-ChildItem -Path \"D:\\\\OmSadLabs\\\\Projects\\\\TechStock\" -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(ls *)",
+      "Bash(dotnet ef *)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(dotnet build *)",
+      "Bash(dir D:\\\\OmSadLabs\\\\Projects\\\\TechStock *)",
+      "Bash(xargs grep -l \"pdf\\\\|print\\\\|export\\\\|barcode\" -i)",
+      "Bash(xargs grep -l \"class.*Dto\")",
+      "Bash(xargs grep -l \"Barcode\\\\|Batch\")",
+      "Bash(wsl wc *)"
     ]
   }
 }

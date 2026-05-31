@@ -1,0 +1,290 @@
+@page "/barcodes/print"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Justify="Justify.SpaceBetween">
+    <MudText Typo="Typo.h4">Barcode Print</MudText>
+    @if (_printList.Count > 0)
+    {
+        <MudText Typo="Typo.subtitle1" Color="Color.Secondary">
+            @_printList.Sum(i => i.PrintQty) label(s) queued
+        </MudText>
+    }
+</MudStack>
+
+@* Step 1: Search & Add *@
+<MudPaper Class="pa-4 mb-3" Outlined="true">
+    <MudText Typo="Typo.subtitle1" Class="mb-3">Step 1 — Search &amp; Add Items</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="8">
+            <MudTextField @bind-Value="_search" Label="Product name, brand, barcode or batch"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                          OnAdornmentClick="SearchAsync" OnKeyDown="OnKeyDown" />
+        </MudItem>
+        <MudItem xs="12" sm="4" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                       OnClick="SearchAsync" Disabled="_searching">
+                @(_searching ? "Searching..." : "Search")
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @if (_searchDone && _results.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-2">No items found.</MudAlert>
+    }
+    else if (_results.Count > 0)
+    {
+        <MudSimpleTable Dense="true" Class="mt-3">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Batch</th>
+                    <th>Barcode</th>
+                    <th>In Stock</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _results)
+                {
+                    var alreadyAdded = _printList.Any(p => p.BatchItemId == item.BatchItemId);
+                    var noBarcode = string.IsNullOrEmpty(item.Barcode);
+                    <tr>
+                        <td>
+                            <MudText Typo="Typo.body2">@item.ProductName</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@item.BrandName</MudText>
+                        </td>
+                        <td style="font-family:monospace">@item.BatchNumber</td>
+                        <td>
+                            @if (noBarcode)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning">No Barcode</MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Style="font-family:monospace">@item.Barcode</MudText>
+                            }
+                        </td>
+                        <td>@item.RemainingQty</td>
+                        <td>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       Disabled="@(noBarcode || alreadyAdded)"
+                                       Color="@(alreadyAdded ? Color.Success : Color.Default)"
+                                       OnClick='() => AddItem(item)'>
+                                @(alreadyAdded ? "Added" : noBarcode ? "No Barcode" : "Add")
+                            </MudButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudPaper>
+
+@* Step 2: Quantities *@
+@if (_printList.Count > 0)
+{
+    <MudPaper Class="pa-4 mb-3" Outlined="true">
+        <MudText Typo="Typo.subtitle1" Class="mb-3">Step 2 — Set Quantities</MudText>
+        <MudSimpleTable Dense="true">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Batch</th>
+                    <th>Barcode</th>
+                    <th style="width:140px">Print Qty</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _printList)
+                {
+                    <tr>
+                        <td>
+                            <MudText Typo="Typo.body2">@item.ProductName</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@item.BrandName</MudText>
+                        </td>
+                        <td style="font-family:monospace">@item.BatchNumber</td>
+                        <td style="font-family:monospace">@item.Barcode</td>
+                        <td>
+                            <MudNumericField T="int" Value="item.PrintQty"
+                                             ValueChanged="@(v => item.PrintQty = Math.Max(1, v))"
+                                             Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </td>
+                        <td>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                           Color="Color.Error" OnClick='() => _printList.Remove(item)' />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    @* Step 3: Settings & Generate *@
+    <MudPaper Class="pa-4" Outlined="true">
+        <MudText Typo="Typo.subtitle1" Class="mb-3">Step 3 — Label Layout &amp; Print</MudText>
+        <MudGrid AlignItems="AlignItems.Center">
+            <MudItem xs="12" sm="4">
+                <MudSelect @bind-Value="_layout" Label="Label Size" Variant="Variant.Outlined">
+                    <MudSelectItem T="string" Value='"2up"'>Large — 2 per row (~14/page)</MudSelectItem>
+                    <MudSelectItem T="string" Value='"3up"'>Medium — 3 per row (~24/page)</MudSelectItem>
+                    <MudSelectItem T="string" Value='"4up"'>Small — 4 per row (~40/page)</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudSwitch @bind-Value="_showPrice" Label="Show Price" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudSwitch @bind-Value="_showBatch" Label="Show Batch" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Print"
+                               OnClick="GenerateAndPrintAsync">
+                        Print @_printList.Sum(i => i.PrintQty) Labels
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                               OnClick='() => _printList.Clear()'>Clear</MudButton>
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+            A new browser window will open with the label sheet. Use your browser's print dialog
+            (Ctrl+P / Cmd+P) to send it to your sticker printer.
+        </MudAlert>
+    </MudPaper>
+}
+
+@code {
+    private string _search = string.Empty;
+    private bool _searching;
+    private bool _searchDone;
+    private List<ScanResult> _results = [];
+    private List<PrintItem> _printList = [];
+
+    private string _layout = "3up";
+    private bool _showPrice = true;
+    private bool _showBatch = true;
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SearchAsync();
+    }
+
+    private async Task SearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_search)) return;
+        _searching = true;
+        _searchDone = false;
+        _results = [];
+        try
+        {
+            _results = await Api.GetAsync<List<ScanResult>>(
+                $"api/batches/items/search?q={Uri.EscapeDataString(_search.Trim())}") ?? [];
+        }
+        catch { _results = []; }
+        finally { _searching = false; _searchDone = true; }
+    }
+
+    private void AddItem(ScanResult item)
+    {
+        if (string.IsNullOrEmpty(item.Barcode)) return;
+        if (_printList.Any(p => p.BatchItemId == item.BatchItemId)) return;
+        _printList.Add(new PrintItem
+        {
+            BatchItemId = item.BatchItemId,
+            ProductName = item.ProductName,
+            BrandName = item.BrandName,
+            Barcode = item.Barcode,
+            BatchNumber = item.BatchNumber,
+            SellingPrice = item.SellingPrice,
+            PrintQty = Math.Max(1, item.RemainingQty),
+        });
+    }
+
+    private async Task GenerateAndPrintAsync()
+    {
+        if (!_printList.Any(i => i.PrintQty > 0)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("openBarcodePrint", BuildLabelHtml());
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+    }
+
+    private string BuildLabelHtml()
+    {
+        var labelWidth = _layout switch { "2up" => "48%", "4up" => "23%", _ => "31%" };
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\">");
+        sb.Append("<script src=\"https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js\"></script>");
+        sb.Append("<style>");
+        sb.Append("@page{size:A4;margin:5mm}");
+        sb.Append("*{box-sizing:border-box;margin:0;padding:0}");
+        sb.Append("body{font-family:Arial,sans-serif;padding:3mm}");
+        sb.Append(".grid{display:flex;flex-wrap:wrap;gap:3mm}");
+        sb.Append($".label{{width:{labelWidth};border:0.5px dashed #bbb;border-radius:2px;padding:3mm 2mm;display:flex;flex-direction:column;align-items:center;page-break-inside:avoid}}");
+        sb.Append(".label svg{width:100%}");
+        sb.Append(".pname{font-size:9pt;font-weight:bold;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%;margin-bottom:1mm}");
+        sb.Append(".brand{font-size:7pt;color:#666;margin-bottom:2mm}");
+        sb.Append(".price{font-size:10pt;font-weight:bold;margin-top:2mm}");
+        sb.Append(".batch{font-size:7pt;color:#888;font-family:monospace;margin-top:1mm}");
+        sb.Append("</style></head><body><div class=\"grid\">");
+
+        foreach (var item in _printList)
+        {
+            var name = System.Net.WebUtility.HtmlEncode(item.ProductName);
+            var brand = System.Net.WebUtility.HtmlEncode(item.BrandName);
+            var barcode = System.Net.WebUtility.HtmlEncode(item.Barcode);
+            var batch = System.Net.WebUtility.HtmlEncode(item.BatchNumber);
+
+            for (int i = 0; i < item.PrintQty; i++)
+            {
+                sb.Append($"<div class=\"label\"><div class=\"pname\">{name}</div><div class=\"brand\">{brand}</div>");
+                sb.Append($"<svg data-barcode=\"{barcode}\"></svg>");
+                if (_showPrice) sb.Append($"<div class=\"price\">LKR {item.SellingPrice:N0}</div>");
+                if (_showBatch) sb.Append($"<div class=\"batch\">{batch}</div>");
+                sb.Append("</div>");
+            }
+        }
+
+        sb.Append("</div><script>");
+        sb.Append("document.querySelectorAll('svg[data-barcode]').forEach(function(el){");
+        sb.Append("try{JsBarcode(el,el.getAttribute('data-barcode'),{format:'CODE128',height:35,displayValue:true,fontSize:10,margin:2});}catch(e){}");
+        sb.Append("});");
+        sb.Append("setTimeout(function(){window.print();},400);");
+        sb.Append("</script></body></html>");
+
+        return sb.ToString();
+    }
+
+    private class ScanResult
+    {
+        public Guid BatchItemId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string BatchNumber { get; set; } = string.Empty;
+        public string? Barcode { get; set; }
+        public int RemainingQty { get; set; }
+        public decimal SellingPrice { get; set; }
+    }
+
+    private class PrintItem
+    {
+        public Guid BatchItemId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string Barcode { get; set; } = string.Empty;
+        public string BatchNumber { get; set; } = string.Empty;
+        public decimal SellingPrice { get; set; }
+        public int PrintQty { get; set; }
+    }
+}

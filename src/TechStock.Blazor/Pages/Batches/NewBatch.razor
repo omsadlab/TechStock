@@ -1,0 +1,136 @@
+@page "/batches/new"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                   OnClick='() => Nav.NavigateTo("/batches")' />
+    <MudText Typo="Typo.h5">New Batch</MudText>
+</MudStack>
+
+<MudCard Style="max-width:640px;">
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_supplier" Label="Supplier" Required="true"
+                              Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_purchaseDate" Label="Purchase Date" Required="true"
+                               Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_estimatedArrival" Label="Estimated Arrival (optional)"
+                               Variant="Variant.Outlined" />
+            </MudItem>
+
+            @* Currency row *@
+            <MudItem xs="12" sm="4">
+                <MudSelect @bind-Value="_purchaseCurrency" Label="Purchase Currency" Variant="Variant.Outlined">
+                    @foreach (var c in _currencies)
+                    {
+                        <MudSelectItem Value="@c">@c</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect @bind-Value="_sellCurrency" Label="Selling Currency" Variant="Variant.Outlined">
+                    @foreach (var c in _currencies)
+                    {
+                        <MudSelectItem Value="@c">@c</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudNumericField @bind-Value="_exchangeRate"
+                                 Label="@($"1 {_purchaseCurrency} =")"
+                                 HelperText="@($"{_exchangeRate:N4} {_sellCurrency}")"
+                                 Required="true" Variant="Variant.Outlined" Format="N4"
+                                 HideSpinButtons="true" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_notes" Label="Notes (optional)"
+                              Variant="Variant.Outlined" Lines="3" />
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+    <MudCardActions Class="pa-4">
+        <MudButton OnClick='() => Nav.NavigateTo("/batches")' Variant="Variant.Text">Cancel</MudButton>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAsync" Disabled="_saving">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Create Batch
+        </MudButton>
+    </MudCardActions>
+</MudCard>
+
+@code {
+    private static readonly string[] _currencies =
+        ["JPY", "USD", "EUR", "GBP", "CNY", "AUD", "SGD", "KRW", "LKR", "INR"];
+
+    private string _supplier = string.Empty;
+    private DateTime? _purchaseDate = DateTime.Today;
+    private DateTime? _estimatedArrival;
+    private string _purchaseCurrency = "JPY";
+    private string _sellCurrency = "LKR";
+    private decimal _exchangeRate = 1m;
+    private string? _notes;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await Api.GetAsync<List<SettingDto>>("api/settings");
+            var buyRate = settings?.FirstOrDefault(s => s.Key == "DefaultCurrency")?.Value;
+            var sellRate = settings?.FirstOrDefault(s => s.Key == "DefaultSellingCurrency")?.Value;
+            var rate = settings?.FirstOrDefault(s => s.Key == "DefaultExchangeRate")?.Value;
+
+            if (!string.IsNullOrEmpty(buyRate)) _purchaseCurrency = buyRate;
+            if (!string.IsNullOrEmpty(sellRate)) _sellCurrency = sellRate;
+            if (decimal.TryParse(rate, out var parsed) && parsed > 0) _exchangeRate = parsed;
+        }
+        catch { /* fall back to defaults */ }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_supplier) || _purchaseDate == null || _exchangeRate <= 0)
+        {
+            Snackbar.Add("Supplier, purchase date and exchange rate are required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var result = await Api.PostAsync<BatchResult>("api/batches", new
+            {
+                PurchaseDate = _purchaseDate!.Value,
+                Supplier = _supplier.Trim(),
+                PurchaseCurrency = _purchaseCurrency,
+                SellingCurrency = _sellCurrency,
+                ExchangeRate = _exchangeRate,
+                EstimatedArrival = _estimatedArrival,
+                Notes = string.IsNullOrWhiteSpace(_notes) ? null : _notes.Trim(),
+                Items = Array.Empty<object>()
+            });
+            Snackbar.Add("Batch created.", Severity.Success);
+            Nav.NavigateTo($"/batches/{result!.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create batch: {ex.Message}", Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+
+    private class BatchResult { public Guid Id { get; set; } }
+    private class SettingDto { public string Key { get; set; } = string.Empty; public string Value { get; set; } = string.Empty; }
+}

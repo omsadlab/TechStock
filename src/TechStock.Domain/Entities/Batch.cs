@@ -6,6 +6,7 @@ public class Batch : BaseEntity
     public DateTime PurchaseDate { get; set; }
     public string Supplier { get; set; } = string.Empty;
     public string Currency { get; set; } = "JPY";
+    public string SellingCurrency { get; set; } = "LKR";
     public decimal ExchangeRate { get; set; }
     public decimal TotalCostLKR { get; set; }
     public DateTime? EstimatedArrival { get; set; }

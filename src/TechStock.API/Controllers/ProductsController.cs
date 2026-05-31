@@ -50,4 +50,23 @@ public class ProductsController : ControllerBase
         await _service.DeleteAsync(id);
         return NoContent();
     }
+
+    [HttpGet("{id:guid}/batches")]
+    public async Task<IActionResult> GetBatches(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to)
+    {
+        var includeCost = User.IsInRole("Admin") || User.IsInRole("Manager");
+        return Ok(await _service.GetProductBatchesAsync(id, includeCost, from, to));
+    }
+
+    [HttpGet("{id:guid}/sales")]
+    public async Task<IActionResult> GetProductSales(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to)
+    {
+        Guid? userId = null;
+        if (User.IsInRole("Salesperson"))
+        {
+            var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (Guid.TryParse(claim, out var parsed)) userId = parsed;
+        }
+        return Ok(await _service.GetProductSalesAsync(id, from, to, userId));
+    }
 }

@@ -1,0 +1,231 @@
+@page "/products"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Products</MudText>
+
+<MudGrid Class="mb-3">
+    <MudItem xs="12" sm="6" md="4">
+        <MudTextField Value="_search" Label="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Immediate="true" DebounceInterval="300"
+                      ValueChanged="@(async (string v) => { _search = v; _page = 1; await LoadAsync(); })" />
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudSelect T="Guid?" Value="_typeId" Label="Product Type" Variant="Variant.Outlined"
+                   ValueChanged="@(async (Guid? v) => { _typeId = v; _page = 1; await LoadAsync(); })">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">All Types</MudSelectItem>
+            @foreach (var t in _types)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)t.Id)">@t.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudSelect T="Guid?" Value="_brandId" Label="Brand" Variant="Variant.Outlined"
+                   ValueChanged="@(async (Guid? v) => { _brandId = v; _page = 1; await LoadAsync(); })">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">All Brands</MudSelectItem>
+            @foreach (var b in _brands)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)b.Id)">@b.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="2">
+        <AuthorizeView Roles="Admin,Manager">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" FullWidth="true"
+                           OnClick='() => Nav.NavigateTo("/products/add")'>
+                    Add Product
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </MudItem>
+</MudGrid>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (!_products.Any())
+{
+    <MudText Color="Color.Secondary" Class="mt-4">No products found.</MudText>
+}
+else
+{
+    @* Desktop *@
+    <MudHidden Breakpoint="Breakpoint.SmAndDown">
+        <MudTable Items="_products" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh @onclick='() => SortAsync("name")' Style="cursor:pointer;user-select:none">
+                    Name / Model <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("name")" />
+                </MudTh>
+                <MudTh @onclick='() => SortAsync("brand")' Style="cursor:pointer;user-select:none">
+                    Brand <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("brand")" />
+                </MudTh>
+                <MudTh @onclick='() => SortAsync("type")' Style="cursor:pointer;user-select:none">
+                    Type <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("type")" />
+                </MudTh>
+                <MudTh>Stock</MudTh>
+                <MudTh>Selling Price</MudTh>
+                <MudTh @onclick='() => SortAsync("status")' Style="cursor:pointer;user-select:none">
+                    Status <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("status")" />
+                </MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                @{var pid = context.Id;}
+                <MudTd>
+                    <MudLink Style="cursor:pointer" OnClick='() => Nav.NavigateTo($"/products/{pid}")'>
+                        <MudText Typo="Typo.body2" Style="font-weight:500">@context.Name</MudText>
+                        @if (!string.IsNullOrEmpty(context.Model))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Model</MudText>
+                        }
+                    </MudLink>
+                </MudTd>
+                <MudTd>@context.BrandName</MudTd>
+                <MudTd>@context.ProductTypeName</MudTd>
+                <MudTd><StockBadge Stock="@context.TotalStock" /></MudTd>
+                <MudTd>@(context.SellingPriceLKR.HasValue ? $"LKR {context.SellingPriceLKR:N0}" : "—")</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.IsActive ? Color.Success : Color.Default)">
+                        @(context.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   OnClick='() => Nav.NavigateTo($"/products/{pid}")' />
+                    <AuthorizeView Roles="Admin,Manager" Context="authCtx">
+                        <Authorized>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick='() => Nav.NavigateTo($"/products/{pid}/edit")' />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                           Color="Color.Error" OnClick='() => _ = ConfirmDeleteAsync(pid)' />
+                        </Authorized>
+                    </AuthorizeView>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudHidden>
+
+    @* Mobile *@
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        @foreach (var p in _products)
+        {
+            <MudCard Class="mb-2" @onclick='() => Nav.NavigateTo($"/products/{p.Id}")' Style="cursor:pointer;">
+                <MudCardContent>
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                        <div>
+                            <MudText Typo="Typo.subtitle1">@p.Name</MudText>
+                            @if (!string.IsNullOrEmpty(p.Model))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@p.Model</MudText>
+                            }
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">@p.BrandName · @p.ProductTypeName</MudText>
+                        </div>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(p.IsActive ? Color.Success : Color.Default)">
+                            @(p.IsActive ? "Active" : "Inactive")
+                        </MudChip>
+                    </MudStack>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-1">
+                        <StockBadge Stock="@p.TotalStock" />
+                        <MudText Typo="Typo.body2">@(p.SellingPriceLKR.HasValue ? $"LKR {p.SellingPriceLKR:N0}" : "—")</MudText>
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+        }
+    </MudHidden>
+
+    <MudPagination Count="_totalPages" SelectedChanged="OnPageChanged" Class="mt-3" />
+}
+
+@code {
+    private List<ProductRow> _products = [];
+    private List<TypeItem> _types = [];
+    private List<BrandItem> _brands = [];
+    private bool _loading = true;
+    private string _search = string.Empty;
+    private Guid? _typeId;
+    private Guid? _brandId;
+    private int _page = 1;
+    private int _totalPages = 1;
+    private string _sortBy = "name";
+    private bool _sortDesc = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var t = Api.GetAsync<List<TypeItem>>("api/product-types");
+        var b = Api.GetAsync<List<BrandItem>>("api/brands");
+        await Task.WhenAll(t, b);
+        _types = t.Result ?? [];
+        _brands = b.Result ?? [];
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var url = $"api/products?page={_page}&pageSize=20&sortBy={_sortBy}&sortDir={(_sortDesc ? "desc" : "asc")}";
+            if (!string.IsNullOrEmpty(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
+            if (_typeId.HasValue) url += $"&typeId={_typeId}";
+            if (_brandId.HasValue) url += $"&brandId={_brandId}";
+            var result = await Api.GetAsync<PagedResult<ProductRow>>(url);
+            if (result != null) { _products = result.Items; _totalPages = result.TotalPages; }
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page) { _page = page; await LoadAsync(); }
+
+    private async Task SortAsync(string col)
+    {
+        if (_sortBy == col) _sortDesc = !_sortDesc;
+        else { _sortBy = col; _sortDesc = false; }
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private string SortArrow() => _sortDesc ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward;
+    private string SortVis(string col) => _sortBy == col ? "vertical-align:middle" : "visibility:hidden";
+
+    private async Task ConfirmDeleteAsync(Guid id)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Product",
+            "This will deactivate the product. It will no longer appear in inventory.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirm != true) return;
+        try
+        {
+            await Api.DeleteAsync($"api/products/{id}");
+            Snackbar.Add("Product deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch { Snackbar.Add("Failed to delete product.", Severity.Error); }
+    }
+
+    private class ProductRow
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Model { get; set; }
+        public string BrandName { get; set; } = string.Empty;
+        public string ProductTypeName { get; set; } = string.Empty;
+        public int TotalStock { get; set; }
+        public decimal? SellingPriceLKR { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    private record TypeItem(Guid Id, string Name, bool IsActive);
+    private record BrandItem(Guid Id, string Name, string? Country, bool IsActive);
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; public int TotalPages { get; set; } }
+}

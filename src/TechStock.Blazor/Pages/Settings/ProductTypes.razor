@@ -1,0 +1,389 @@
+@page "/settings/product-types"
+@namespace TechStock.Blazor.Pages.Admin
+@attribute [Authorize(Roles = "Admin")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Product Types &amp; Spec Fields</MudText>
+
+<MudGrid>
+    @* Left panel — Product Types *@
+    <MudItem xs="12" md="5">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.subtitle1"><b>Product Types</b></MudText>
+            <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Filled"
+                       Color="Color.Primary" Size="Size.Small" OnClick="OpenAddTypeDialog">
+                Add Type
+            </MudButton>
+        </MudStack>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_types.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">No product types found.</MudAlert>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Style="overflow:hidden">
+                @foreach (var pt in _types)
+                {
+                    var isSelected = _selectedType?.Id == pt.Id;
+                    var rowBg = isSelected ? "background:var(--mud-palette-action-default-hover)" : "";
+                    var nameFw = isSelected ? "font-weight:600" : "";
+                    <div style="@($"cursor:pointer;padding:8px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--mud-palette-lines-default);{rowBg}")"
+                         @onclick='() => SelectTypeAsync(pt)'>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(pt.IsActive ? Color.Success : Color.Warning)"
+                                 Style="min-width:68px;justify-content:center">
+                            @(pt.IsActive ? "Active" : "Inactive")
+                        </MudChip>
+                        <MudText Typo="Typo.body2"
+                                 Color="@(pt.IsActive ? Color.Default : Color.Secondary)"
+                                 Style="@($"flex:1;{nameFw}")">
+                            @pt.Name
+                        </MudText>
+                        <span @onclick:stopPropagation="true">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick='() => OpenEditTypeDialog(pt)' />
+                        </span>
+                        <span @onclick:stopPropagation="true">
+                            <MudIconButton Icon="@Icons.Material.Filled.PersonOff" Size="Size.Small"
+                                           Color="Color.Warning" Title="Deactivate"
+                                           Disabled="@(!pt.IsActive)"
+                                           OnClick='() => ConfirmDeactivateTypeAsync(pt)' />
+                        </span>
+                    </div>
+                }
+            </MudPaper>
+        }
+    </MudItem>
+
+    @* Right panel — Config Types *@
+    <MudItem xs="12" md="7">
+        @if (_selectedType == null)
+        {
+            <MudPaper Class="pa-6 d-flex align-center justify-center" Outlined="true" Style="height:200px">
+                <MudText Typo="Typo.body1" Color="Color.Secondary">
+                    &larr; Select a product type to manage its spec fields
+                </MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                <MudText Typo="Typo.subtitle1"><b>@_selectedType.Name</b> — Spec Fields</MudText>
+                <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Filled"
+                           Color="Color.Secondary" Size="Size.Small" OnClick="OpenAddSpecDialog">
+                    Add Spec
+                </MudButton>
+            </MudStack>
+
+            @if (_loadingConfigs)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Secondary" />
+            }
+            else if (_configs.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">No spec fields yet. Add the first one.</MudAlert>
+            }
+            else
+            {
+                <MudPaper Outlined="true">
+                    <MudSimpleTable Dense="true">
+                        <thead>
+                            <tr>
+                                <th style="width:60px">Order</th>
+                                <th>Spec Name</th>
+                                <th>Required</th>
+                                <th style="width:160px">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (int i = 0; i < _configs.Count; i++)
+                            {
+                                var idx = i;
+                                var ct = _configs[i];
+                                <tr>
+                                    <td>@ct.DisplayOrder</td>
+                                    <td>@ct.Name</td>
+                                    <td>
+                                        <MudChip T="string" Size="Size.Small"
+                                                 Color="@(ct.IsRequired ? Color.Primary : Color.Default)">
+                                            @(ct.IsRequired ? "Required" : "Optional")
+                                        </MudChip>
+                                    </td>
+                                    <td>
+                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
+                                                       Disabled="@(idx == 0)"
+                                                       OnClick='() => MoveSpecAsync(idx, -1)' />
+                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
+                                                       Disabled="@(idx == _configs.Count - 1)"
+                                                       OnClick='() => MoveSpecAsync(idx, 1)' />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                       OnClick='() => OpenEditSpecDialog(ct)' />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                       Color="Color.Error"
+                                                       OnClick='() => ConfirmDeleteSpecAsync(ct)' />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            }
+        }
+    </MudItem>
+</MudGrid>
+
+@* ProductType Dialog *@
+<MudDialog @bind-Visible="_ptDialogOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }'>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_ptIsEdit ? "Edit Product Type" : "Add Product Type")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_ptName" Label="Type Name" Variant="Variant.Outlined"
+                      AutoFocus="true" Class="mb-3" />
+        @if (_ptIsEdit)
+        {
+            <MudSwitch @bind-Value="_ptIsActive" Label="Active" Color="Color.Primary" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick='() => _ptDialogOpen = false'>Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveTypeAsync" Disabled="_saving">
+            @(_saving ? "Saving..." : "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ConfigType Dialog *@
+<MudDialog @bind-Visible="_ctDialogOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }'>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_ctIsEdit ? "Edit Spec Field" : "Add Spec Field")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_ctName" Label="Spec Name" Variant="Variant.Outlined"
+                      AutoFocus="true" Class="mb-3" />
+        <MudNumericField T="int" @bind-Value="_ctOrder" Label="Display Order"
+                         Min="1" Variant="Variant.Outlined" Class="mb-3" />
+        <MudSwitch @bind-Value="_ctRequired" Label="Required" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick='() => _ctDialogOpen = false'>Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveSpecAsync" Disabled="_saving">
+            @(_saving ? "Saving..." : "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<ProductTypeRow> _types = [];
+    private ProductTypeRow? _selectedType;
+    private List<ConfigTypeRow> _configs = [];
+    private bool _loading = true;
+    private bool _loadingConfigs;
+    private bool _saving;
+
+    // product type dialog state
+    private bool _ptDialogOpen;
+    private bool _ptIsEdit;
+    private Guid _ptEditId;
+    private string _ptName = string.Empty;
+    private bool _ptIsActive = true;
+
+    // config type dialog state
+    private bool _ctDialogOpen;
+    private bool _ctIsEdit;
+    private Guid _ctEditId;
+    private string _ctName = string.Empty;
+    private int _ctOrder = 1;
+    private bool _ctRequired;
+
+    protected override async Task OnInitializedAsync() => await LoadTypesAsync();
+
+    private async Task LoadTypesAsync()
+    {
+        _loading = true;
+        try { _types = await Api.GetAsync<List<ProductTypeRow>>("api/product-types") ?? []; }
+        finally { _loading = false; }
+    }
+
+    private async Task SelectTypeAsync(ProductTypeRow pt)
+    {
+        _selectedType = pt;
+        await LoadConfigsAsync(pt.Id);
+    }
+
+    private async Task LoadConfigsAsync(Guid typeId)
+    {
+        _loadingConfigs = true;
+        try { _configs = await Api.GetAsync<List<ConfigTypeRow>>($"api/product-types/{typeId}/config-types") ?? []; }
+        finally { _loadingConfigs = false; }
+    }
+
+    // --- Product Type CRUD ---
+
+    private void OpenAddTypeDialog()
+    {
+        _ptIsEdit = false;
+        _ptName = string.Empty;
+        _ptIsActive = true;
+        _ptDialogOpen = true;
+    }
+
+    private void OpenEditTypeDialog(ProductTypeRow pt)
+    {
+        _ptIsEdit = true;
+        _ptEditId = pt.Id;
+        _ptName = pt.Name;
+        _ptIsActive = pt.IsActive;
+        _ptDialogOpen = true;
+    }
+
+    private async Task SaveTypeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_ptName))
+        {
+            Snackbar.Add("Type name is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            if (_ptIsEdit)
+                await Api.PutAsync($"api/product-types/{_ptEditId}",
+                    new { Name = _ptName.Trim(), IsActive = _ptIsActive });
+            else
+                await Api.PostAsync<object>("api/product-types", new { Name = _ptName.Trim() });
+
+            Snackbar.Add(_ptIsEdit ? "Type updated." : "Type created.", Severity.Success);
+            _ptDialogOpen = false;
+            await LoadTypesAsync();
+
+            if (_ptIsEdit && _selectedType?.Id == _ptEditId)
+                _selectedType = _types.FirstOrDefault(t => t.Id == _ptEditId);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task ConfirmDeactivateTypeAsync(ProductTypeRow pt)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Deactivate Product Type",
+            $"Deactivate '{pt.Name}'? Products of this type are unaffected, but it won't appear in new product forms.",
+            yesText: "Deactivate", cancelText: "Cancel");
+        if (confirm != true) return;
+        try
+        {
+            await Api.PutAsync($"api/product-types/{pt.Id}", new { Name = pt.Name, IsActive = false });
+            Snackbar.Add($"'{pt.Name}' deactivated.", Severity.Success);
+            await LoadTypesAsync();
+            if (_selectedType?.Id == pt.Id)
+                _selectedType = _types.FirstOrDefault(t => t.Id == pt.Id);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // --- Config Type CRUD ---
+
+    private void OpenAddSpecDialog()
+    {
+        _ctIsEdit = false;
+        _ctName = string.Empty;
+        _ctOrder = _configs.Count > 0 ? _configs.Max(c => c.DisplayOrder) + 1 : 1;
+        _ctRequired = false;
+        _ctDialogOpen = true;
+    }
+
+    private void OpenEditSpecDialog(ConfigTypeRow ct)
+    {
+        _ctIsEdit = true;
+        _ctEditId = ct.Id;
+        _ctName = ct.Name;
+        _ctOrder = ct.DisplayOrder;
+        _ctRequired = ct.IsRequired;
+        _ctDialogOpen = true;
+    }
+
+    private async Task SaveSpecAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_ctName))
+        {
+            Snackbar.Add("Spec name is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            if (_ctIsEdit)
+                await Api.PutAsync($"api/config-types/{_ctEditId}",
+                    new { Name = _ctName.Trim(), DisplayOrder = _ctOrder, IsRequired = _ctRequired });
+            else
+                await Api.PostAsync<object>("api/config-types",
+                    new { ProductTypeId = _selectedType!.Id, Name = _ctName.Trim(), DisplayOrder = _ctOrder, IsRequired = _ctRequired });
+
+            Snackbar.Add(_ctIsEdit ? "Spec updated." : "Spec added.", Severity.Success);
+            _ctDialogOpen = false;
+            await LoadConfigsAsync(_selectedType!.Id);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task ConfirmDeleteSpecAsync(ConfigTypeRow ct)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Spec Field",
+            $"Delete '{ct.Name}'? This permanently removes the field from ALL products of this type and cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirm != true) return;
+        try
+        {
+            await Api.DeleteAsync($"api/config-types/{ct.Id}");
+            Snackbar.Add($"'{ct.Name}' deleted.", Severity.Success);
+            await LoadConfigsAsync(_selectedType!.Id);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task MoveSpecAsync(int index, int direction)
+    {
+        var other = index + direction;
+        if (other < 0 || other >= _configs.Count) return;
+        var a = _configs[index];
+        var b = _configs[other];
+        var aOrder = a.DisplayOrder;
+        try
+        {
+            await Api.PutAsync($"api/config-types/{a.Id}",
+                new { Name = a.Name, DisplayOrder = b.DisplayOrder, IsRequired = a.IsRequired });
+            await Api.PutAsync($"api/config-types/{b.Id}",
+                new { Name = b.Name, DisplayOrder = aOrder, IsRequired = b.IsRequired });
+            await LoadConfigsAsync(_selectedType!.Id);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private class ProductTypeRow
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+    }
+
+    private class ConfigTypeRow
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public Guid ProductTypeId { get; set; }
+        public int DisplayOrder { get; set; }
+        public bool IsRequired { get; set; }
+    }
+}

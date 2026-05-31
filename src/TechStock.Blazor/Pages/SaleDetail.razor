@@ -2,11 +2,36 @@
 @attribute [Authorize]
 @inject TechStock.Blazor.Services.ApiClient Api
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 @inject NavigationManager Nav
+@inject ISnackbar Snackbar
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick='() => Nav.NavigateTo("/sales")' />
-    <MudText Typo="Typo.h4">Sale Detail</MudText>
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick='() => Nav.NavigateTo("/sales")' />
+        <MudText Typo="Typo.h4">Sale Detail</MudText>
+    </MudStack>
+    <AuthorizeView Roles="Admin,Manager">
+        <Authorized>
+            @if (!_editMode)
+            {
+                <MudButton StartIcon="@Icons.Material.Filled.Edit" Variant="Variant.Outlined"
+                           Color="Color.Primary" OnClick="EnterEditMode" Disabled="_loading">
+                    Edit Sale
+                </MudButton>
+            }
+            else
+            {
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Outlined" OnClick="CancelEdit">Cancel</MudButton>
+                    <MudButton StartIcon="@Icons.Material.Filled.Save" Variant="Variant.Filled"
+                               Color="Color.Primary" OnClick="SaveEditAsync" Disabled="_saving">
+                        @(_saving ? "Saving..." : "Save Changes")
+                    </MudButton>
+                </MudStack>
+            }
+        </Authorized>
+    </AuthorizeView>
 </MudStack>
 
 @if (_loading) { <MudProgressLinear Indeterminate="true" /> }
@@ -17,62 +42,643 @@ else if (_sale != null)
             <MudGrid>
                 <MudItem xs="6"><MudText><strong>Invoice:</strong> @_sale.InvoiceNumber</MudText></MudItem>
                 <MudItem xs="6"><MudText><strong>Date:</strong> @_sale.SaleDate.ToString("dd MMM yyyy")</MudText></MudItem>
-                <MudItem xs="6"><MudText><strong>Customer:</strong> @(_sale.CustomerName ?? "Walk-in")</MudText></MudItem>
-                <MudItem xs="6"><MudText><strong>Phone:</strong> @(_sale.CustomerPhone ?? "—")</MudText></MudItem>
+                @if (_editMode)
+                {
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_editName" Label="Customer Name (optional)"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_editPhone" Label="Customer Phone (optional)"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudNumericField T="decimal" @bind-Value="_editDiscount"
+                                         Label="Overall Discount (LKR)" Min="0"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                }
+                else
+                {
+                    <MudItem xs="6"><MudText><strong>Customer:</strong> @(_sale.CustomerName ?? "Walk-in")</MudText></MudItem>
+                    <MudItem xs="6"><MudText><strong>Phone:</strong> @(_sale.CustomerPhone ?? "—")</MudText></MudItem>
+                    <MudItem xs="6"><MudText><strong>Sold by:</strong> @_sale.CreatedByName</MudText></MudItem>
+                }
             </MudGrid>
         </MudCardContent>
     </MudCard>
 
-    <MudTable Items="_sale.Items" Dense="true" Class="mb-3">
+    <MudTable Items="_sale.Items" T="SaleItemDto" Dense="true" Class="mb-3">
         <HeaderContent>
             <MudTh>Product</MudTh>
+            <MudTh>Barcode</MudTh>
             <MudTh>Qty</MudTh>
+            <MudTh>Warranty</MudTh>
             <MudTh>Unit Price</MudTh>
-            <MudTh>Total</MudTh>
+            <MudTh>Discount</MudTh>
+            <MudTh>Line Total</MudTh>
+            @if (_editMode) { <MudTh></MudTh> }
         </HeaderContent>
         <RowTemplate>
-            <MudTd>@context.ProductName</MudTd>
+            @{
+                var row = _editMode ? _editRows.GetValueOrDefault(context.Id) : null;
+                var idx = _sale.Items.IndexOf(context);
+            }
+            <MudTd>
+                <MudText Typo="Typo.body2">@context.ProductName</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.BrandName</MudText>
+            </MudTd>
+            <MudTd>
+                @if (!string.IsNullOrEmpty(context.Barcode))
+                {
+                    <svg id="si-bc-@idx"></svg>
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary" Typo="Typo.body2">—</MudText>
+                }
+            </MudTd>
             <MudTd>@context.Quantity</MudTd>
-            <MudTd>LKR @context.UnitSellingPrice.ToString("N0")</MudTd>
-            <MudTd>LKR @context.LineTotal.ToString("N0")</MudTd>
+            <MudTd>
+                @if (row != null)
+                {
+                    <MudNumericField T="int?" Value="row.WarrantyMonths"
+                                     ValueChanged="@(v => row.WarrantyMonths = v)"
+                                     Min="1" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Style="width:80px" />
+                }
+                else
+                {
+                    @(context.WarrantyMonths.HasValue ? $"{context.WarrantyMonths} mo." : "—")
+                }
+            </MudTd>
+            <MudTd>
+                @if (row != null)
+                {
+                    <MudNumericField T="decimal" Value="row.Price"
+                                     ValueChanged="@(v => row.Price = v)"
+                                     Min="0" Format="N0" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Style="width:110px" />
+                }
+                else
+                {
+                    @($"LKR {context.UnitSellingPrice:N0}")
+                }
+            </MudTd>
+            <MudTd>
+                @if (row != null)
+                {
+                    <MudNumericField T="decimal" Value="row.Discount"
+                                     ValueChanged="@(v => row.Discount = v)"
+                                     Min="0" Format="N0" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Style="width:110px" />
+                }
+                else
+                {
+                    @(context.Discount > 0 ? $"− LKR {context.Discount:N0}" : "—")
+                }
+            </MudTd>
+            <MudTd>
+                @if (row != null)
+                {
+                    @($"LKR {Math.Max(0, row.Price * context.Quantity - row.Discount):N0}")
+                }
+                else
+                {
+                    @($"LKR {context.LineTotal:N0}")
+                }
+            </MudTd>
+            @if (_editMode)
+            {
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small"
+                                   Color="Color.Error" OnClick='() => ConfirmRemoveItemAsync(context)' />
+                </MudTd>
+            }
         </RowTemplate>
     </MudTable>
 
+    @if (_editMode)
+    {
+        <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Outlined"
+                   Color="Color.Secondary" Class="mb-3" OnClick="OpenAddItemDialog">
+            Add Item
+        </MudButton>
+    }
+
     <MudStack AlignItems="AlignItems.End" Class="mb-3">
+        @if (ItemDiscounts > 0)
+        {
+            <MudText>Gross Subtotal: LKR @GrossSubtotal.ToString("N0")</MudText>
+            <MudText Color="Color.Secondary">Item Discounts: − LKR @ItemDiscounts.ToString("N0")</MudText>
+        }
         <MudText>Subtotal: LKR @_sale.SubtotalLKR.ToString("N0")</MudText>
-        <MudText>Discount: LKR @_sale.DiscountLKR.ToString("N0")</MudText>
+        @if (_sale.DiscountLKR > 0)
+        {
+            <MudText Color="Color.Secondary">Order Discount: − LKR @_sale.DiscountLKR.ToString("N0")</MudText>
+        }
         <MudText Typo="Typo.h5"><strong>Total: LKR @_sale.TotalLKR.ToString("N0")</strong></MudText>
+        @if (TotalSavings > 0)
+        {
+            <MudText Color="Color.Success" Typo="Typo.body2">You saved: LKR @TotalSavings.ToString("N0")</MudText>
+        }
     </MudStack>
 
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Print"
-               OnClick="PrintInvoice">
-        Print Invoice
-    </MudButton>
-
-    <iframe id="invoice-frame" src="@_invoiceUrl" style="display:none;width:100%;height:600px;"></iframe>
+    @if (!_editMode)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@_printIcon" Disabled="_printing"
+                   OnClick="HandlePrintAsync">
+            @_printLabel
+        </MudButton>
+    }
 }
+
+@* Add Item Dialog *@
+<MudDialog @bind-Visible="_addItemOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true }'>
+    <TitleContent><MudText Typo="Typo.h6">Add Item to Sale</MudText></TitleContent>
+    <DialogContent>
+        <MudGrid Class="mb-3">
+            <MudItem xs="12" sm="9">
+                <MudTextField @bind-Value="_addBarcodeInput" Label="Scan / type barcode + Enter"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                              OnAdornmentClick="AddLookupBarcodeAsync"
+                              OnKeyDown="OnAddBarcodeKeyDown"
+                              Disabled="_addScanning" />
+            </MudItem>
+            <MudItem xs="12" sm="3" Class="d-flex align-end">
+                <MudButton Variant="Variant.Outlined" FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.List"
+                           OnClick="AddBrowseAsync">Browse All</MudButton>
+            </MudItem>
+        </MudGrid>
+
+        @if (_addScanning) { <MudProgressLinear Indeterminate="true" Class="mb-2" /> }
+        @if (_addScanError != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@_addScanError</MudAlert>
+        }
+
+        @if (_addScannedItem != null)
+        {
+            <MudPaper Class="pa-3 mb-3" Outlined="true">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">@_addScannedItem.ProductName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @_addScannedItem.BrandName · Batch: @_addScannedItem.BatchNumber · @_addScannedItem.Barcode
+                        </MudText>
+                    </div>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(_addScannedItem.RemainingQty > 0 ? Color.Success : Color.Error)">
+                        Stock: @_addScannedItem.RemainingQty
+                    </MudChip>
+                </MudStack>
+                <MudGrid>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="int" @bind-Value="_addQty" Label="Qty" Min="1"
+                                         Max="@_addScannedItem.RemainingQty" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="decimal" @bind-Value="_addPrice" Label="Unit Price (LKR)"
+                                         Min="0" Format="N0" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="int?" @bind-Value="_addWarrantyMonths" Label="Warranty (months)"
+                                         Min="1" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="decimal" @bind-Value="_addItemDiscount" Label="Item Discount"
+                                         Min="0" Format="N0" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" Class="d-flex justify-end">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="ConfirmAddItemAsync"
+                                   Disabled="@(_addScannedItem.RemainingQty == 0 || _saving)">
+                            @(_saving ? "Adding..." : "Add to Sale")
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        }
+
+        @if (_addBrowseItems.Count > 0 && _addScannedItem == null)
+        {
+            <MudSimpleTable Dense="true">
+                <thead>
+                    <tr>
+                        <th>Product</th><th>Brand</th><th>Barcode</th>
+                        <th>Batch</th><th>Stock</th><th>Price (LKR)</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _addBrowseItems)
+                    {
+                        <tr>
+                            <td>@item.ProductName</td>
+                            <td>@item.BrandName</td>
+                            <td style="font-family:monospace;font-size:12px">@item.Barcode</td>
+                            <td>@item.BatchNumber</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(item.RemainingQty <= 2 ? Color.Warning : Color.Success)">
+                                    @item.RemainingQty
+                                </MudChip>
+                            </td>
+                            <td>@item.SellingPrice.ToString("N0")</td>
+                            <td>
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                           OnClick='() => SelectAddBrowsedItem(item)'>Select</MudButton>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick='() => { _addItemOpen = false; _addScannedItem = null; _addBrowseItems = []; }'>
+            Close
+        </MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
     [Parameter] public Guid Id { get; set; }
 
     private SaleDto? _sale;
     private bool _loading = true;
-    private string _invoiceUrl = string.Empty;
+    private bool _saving;
+
+    // print
+    private bool _barcodesRendered;
+    private bool _printing;
+    private string _printMode = "PDF";
+    private string _printPaperSize = "A4";
+    private string _shopName = "TechStock";
+    private string _shopAddress = "";
+    private string _shopPhone = "";
+    private string _printIcon = Icons.Material.Filled.PictureAsPdf;
+    private string _printLabel = "Download PDF";
+
+    // edit mode — header + item fields (batched on Save)
+    private bool _editMode;
+    private string? _editName;
+    private string? _editPhone;
+    private decimal _editDiscount;
+    private Dictionary<Guid, EditRow> _editRows = [];
+
+    // add item dialog
+    private bool _addItemOpen;
+    private string _addBarcodeInput = string.Empty;
+    private bool _addScanning;
+    private string? _addScanError;
+    private BatchItemScanRow? _addScannedItem;
+    private List<BatchItemScanRow> _addBrowseItems = [];
+    private int _addQty = 1;
+    private decimal _addPrice;
+    private int? _addWarrantyMonths;
+    private decimal _addItemDiscount;
+
+    private decimal ItemDiscounts => _sale?.Items.Sum(i => i.Discount) ?? 0;
+    private decimal GrossSubtotal => (_sale?.SubtotalLKR ?? 0) + ItemDiscounts;
+    private decimal TotalSavings => ItemDiscounts + (_sale?.DiscountLKR ?? 0);
 
     protected override async Task OnInitializedAsync()
     {
+        await Task.WhenAll(LoadSaleAsync(), LoadSettingsAsync());
+        UpdatePrintButton();
+    }
+
+    private async Task LoadSaleAsync()
+    {
+        _loading = true;
         try { _sale = await Api.GetAsync<SaleDto>($"api/sales/{Id}"); }
         finally { _loading = false; }
     }
 
-    private async Task PrintInvoice()
+    private async Task LoadSettingsAsync()
     {
-        _invoiceUrl = $"api/sales/{Id}/invoice";
-        StateHasChanged();
-        await Task.Delay(500);
-        await JS.InvokeVoidAsync("printIframe", "invoice-frame");
+        try
+        {
+            var all = await Api.GetAsync<List<SettingDto>>("api/settings") ?? [];
+            var d = all.ToDictionary(s => s.Key, s => s.Value);
+            _printMode = d.GetValueOrDefault("PrintMode", "PDF");
+            _printPaperSize = d.GetValueOrDefault("PrintPaperSize", "A4");
+            _shopName = d.GetValueOrDefault("ShopName", "TechStock");
+            _shopAddress = d.GetValueOrDefault("ShopAddress", "");
+            _shopPhone = d.GetValueOrDefault("ShopPhone", "");
+        }
+        catch { }
     }
+
+    private void UpdatePrintButton()
+    {
+        (_printIcon, _printLabel) = _printMode switch
+        {
+            "Excel" => (Icons.Material.Filled.TableChart, "Download Excel"),
+            "DirectPrint" => (Icons.Material.Filled.Print, "Print"),
+            _ => (Icons.Material.Filled.PictureAsPdf, "Download PDF"),
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_sale != null && !_barcodesRendered && !_editMode)
+        {
+            _barcodesRendered = true;
+            for (int i = 0; i < _sale.Items.Count; i++)
+            {
+                if (!string.IsNullOrEmpty(_sale.Items[i].Barcode))
+                    await JS.InvokeVoidAsync("renderBarcode", $"si-bc-{i}", _sale.Items[i].Barcode);
+            }
+        }
+    }
+
+    // --- Edit mode ---
+
+    private void EnterEditMode()
+    {
+        if (_sale == null) return;
+        _editName = _sale.CustomerName;
+        _editPhone = _sale.CustomerPhone;
+        _editDiscount = _sale.DiscountLKR;
+        _editRows = _sale.Items.ToDictionary(
+            i => i.Id,
+            i => new EditRow { ItemId = i.Id, Price = i.UnitSellingPrice, Discount = i.Discount, WarrantyMonths = i.WarrantyMonths });
+        _editMode = true;
+    }
+
+    private void CancelEdit()
+    {
+        _editMode = false;
+        _editRows = [];
+        _barcodesRendered = false;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_sale == null) return;
+        _saving = true;
+        try
+        {
+            await Api.PutAsync($"api/sales/{Id}", new
+            {
+                CustomerName = _editName,
+                CustomerPhone = _editPhone,
+                DiscountLKR = _editDiscount,
+            });
+
+            foreach (var item in _sale.Items)
+            {
+                if (!_editRows.TryGetValue(item.Id, out var row)) continue;
+                if (row.Price == item.UnitSellingPrice &&
+                    row.Discount == item.Discount &&
+                    row.WarrantyMonths == item.WarrantyMonths) continue;
+
+                await Api.PutAsync($"api/sales/{Id}/items/{item.Id}", new
+                {
+                    UnitSellingPrice = row.Price,
+                    Discount = row.Discount,
+                    WarrantyMonths = row.WarrantyMonths,
+                });
+            }
+
+            Snackbar.Add("Sale updated.", Severity.Success);
+            _editMode = false;
+            _editRows = [];
+            _barcodesRendered = false;
+            await LoadSaleAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task ConfirmRemoveItemAsync(SaleItemDto item)
+    {
+        if (_sale?.Items.Count <= 1)
+        {
+            Snackbar.Add("Cannot remove the last item from a sale.", Severity.Warning);
+            return;
+        }
+        var confirm = await DialogService.ShowMessageBox(
+            "Remove Item",
+            $"Remove '{item.ProductName}' from this sale? The stock will be restored.",
+            yesText: "Remove", cancelText: "Cancel");
+        if (confirm != true) return;
+        try
+        {
+            await Api.DeleteAsync($"api/sales/{Id}/items/{item.Id}");
+            Snackbar.Add("Item removed. Stock restored.", Severity.Success);
+            _barcodesRendered = false;
+            await LoadSaleAsync();
+            RebuildEditRows();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void RebuildEditRows()
+    {
+        if (_sale == null) return;
+        _editRows = _sale.Items.ToDictionary(
+            i => i.Id,
+            i => new EditRow { ItemId = i.Id, Price = i.UnitSellingPrice, Discount = i.Discount, WarrantyMonths = i.WarrantyMonths });
+    }
+
+    // --- Add Item dialog ---
+
+    private void OpenAddItemDialog()
+    {
+        _addBarcodeInput = string.Empty;
+        _addScannedItem = null;
+        _addScanError = null;
+        _addBrowseItems = [];
+        _addQty = 1;
+        _addPrice = 0;
+        _addWarrantyMonths = null;
+        _addItemDiscount = 0;
+        _addItemOpen = true;
+    }
+
+    private async Task OnAddBarcodeKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddLookupBarcodeAsync();
+    }
+
+    private async Task AddLookupBarcodeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_addBarcodeInput)) return;
+        _addScanning = true;
+        _addScanError = null;
+        _addScannedItem = null;
+        _addBrowseItems = [];
+        try
+        {
+            var item = await Api.GetAsync<BatchItemScanRow>(
+                $"api/batches/items/barcode/{Uri.EscapeDataString(_addBarcodeInput.Trim())}");
+            if (item == null)
+            {
+                _addScanError = $"No item found for barcode \"{_addBarcodeInput.Trim()}\".";
+                return;
+            }
+            SelectAddBrowsedItem(item);
+        }
+        catch (Exception ex) { _addScanError = $"Lookup failed: {ex.Message}"; }
+        finally { _addScanning = false; }
+    }
+
+    private async Task AddBrowseAsync()
+    {
+        _addScannedItem = null;
+        _addScanError = null;
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(_addBarcodeInput)
+                ? "api/batches/items/search"
+                : $"api/batches/items/search?q={Uri.EscapeDataString(_addBarcodeInput.Trim())}";
+            _addBrowseItems = await Api.GetAsync<List<BatchItemScanRow>>(url) ?? [];
+        }
+        catch { _addBrowseItems = []; }
+    }
+
+    private void SelectAddBrowsedItem(BatchItemScanRow item)
+    {
+        _addScannedItem = item;
+        _addQty = 1;
+        _addPrice = item.SellingPrice;
+        _addWarrantyMonths = null;
+        _addItemDiscount = 0;
+        _addBrowseItems = [];
+    }
+
+    private async Task ConfirmAddItemAsync()
+    {
+        if (_addScannedItem == null) return;
+        _saving = true;
+        try
+        {
+            await Api.PostAsync<object>($"api/sales/{Id}/items", new
+            {
+                BatchItemId = _addScannedItem.BatchItemId,
+                Quantity = _addQty,
+                UnitSellingPrice = (decimal?)_addPrice,
+                Discount = _addItemDiscount,
+                WarrantyMonths = _addWarrantyMonths,
+            });
+            Snackbar.Add("Item added to sale.", Severity.Success);
+            _addItemOpen = false;
+            _addScannedItem = null;
+            _addBrowseItems = [];
+            _barcodesRendered = false;
+            await LoadSaleAsync();
+            RebuildEditRows();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    // --- Print ---
+
+    private async Task HandlePrintAsync()
+    {
+        if (_sale == null) return;
+        _printing = true;
+        try
+        {
+            switch (_printMode)
+            {
+                case "Excel":
+                    var xlBytes = await Api.GetBytesAsync($"api/sales/{Id}/excel");
+                    await JS.InvokeVoidAsync("downloadFile",
+                        $"sale-{_sale.InvoiceNumber}.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        xlBytes);
+                    break;
+
+                case "DirectPrint":
+                    await JS.InvokeVoidAsync("printHtml", BuildPrintHtml());
+                    break;
+
+                default:
+                    var pdfBytes = await Api.GetBytesAsync($"api/sales/{Id}/invoice");
+                    await JS.InvokeVoidAsync("downloadFile",
+                        $"invoice-{_sale.InvoiceNumber}.pdf",
+                        "application/pdf",
+                        pdfBytes);
+                    break;
+            }
+        }
+        catch { Snackbar.Add("Failed to generate output. Please try again.", Severity.Error); }
+        finally { _printing = false; }
+    }
+
+    private string BuildPrintHtml()
+    {
+        var isThermal = _printPaperSize == "Thermal80mm";
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>");
+        if (isThermal)
+            sb.Append("@page{size:80mm auto;margin:3mm}body{font-family:Arial,sans-serif;font-size:9pt;width:72mm}");
+        else
+            sb.Append("@page{size:A4 portrait;margin:1.5cm}body{font-family:Arial,sans-serif;font-size:10pt}");
+        sb.Append("h3{margin:2px 0}p{margin:1px 0}");
+        sb.Append("table{width:100%;border-collapse:collapse;margin:6px 0}");
+        sb.Append("th,td{padding:3px 6px;text-align:left;border-bottom:1px solid #ccc}");
+        sb.Append("th{font-weight:bold;background:#f0f0f0}.r{text-align:right}");
+        sb.Append(".tot{font-weight:bold;border-top:2px solid #333}");
+        sb.Append("</style></head><body>");
+        sb.Append("<div style=\"text-align:center\">");
+        sb.Append($"<h3>{E(_shopName)}</h3>");
+        if (!string.IsNullOrEmpty(_shopAddress)) sb.Append($"<p style=\"font-size:9pt\">{E(_shopAddress)}</p>");
+        if (!string.IsNullOrEmpty(_shopPhone)) sb.Append($"<p style=\"font-size:9pt\">{E(_shopPhone)}</p>");
+        sb.Append("</div><hr/>");
+        sb.Append("<table style=\"border:none\"><tbody>");
+        sb.Append($"<tr><td style=\"border:0\"><b>Invoice:</b> {E(_sale!.InvoiceNumber)}</td>");
+        sb.Append($"<td style=\"border:0\" class=\"r\"><b>Date:</b> {_sale.SaleDate:dd MMM yyyy}</td></tr>");
+        sb.Append($"<tr><td style=\"border:0\"><b>Customer:</b> {E(_sale.CustomerName ?? "Walk-in")}</td>");
+        sb.Append($"<td style=\"border:0\" class=\"r\">{(string.IsNullOrEmpty(_sale.CustomerPhone) ? "" : "Tel: " + E(_sale.CustomerPhone))}</td></tr>");
+        sb.Append("</tbody></table><hr/>");
+        var hasItemDiscounts = _sale.Items.Any(i => i.Discount > 0);
+        var hasWarranty = _sale.Items.Any(i => i.WarrantyMonths.HasValue);
+        var hdrWarranty = hasWarranty ? "<th>Warranty</th>" : "";
+        var hdrDiscount = hasItemDiscounts ? "<th class=\"r\">Discount</th>" : "";
+        sb.Append($"<table><thead><tr><th>#</th><th>Product</th>{hdrWarranty}<th class=\"r\">Qty</th><th class=\"r\">Unit Price</th>{hdrDiscount}<th class=\"r\">Total</th></tr></thead><tbody>");
+        for (int i = 0; i < _sale.Items.Count; i++)
+        {
+            var it = _sale.Items[i];
+            sb.Append($"<tr><td>{i + 1}</td><td>{E(it.ProductName)}");
+            if (!string.IsNullOrEmpty(it.Barcode))
+                sb.Append($"<br/><small style=\"color:#888;font-size:8pt\">{E(it.Barcode)}</small>");
+            sb.Append("</td>");
+            if (hasWarranty)
+                sb.Append(it.WarrantyMonths.HasValue ? $"<td>{it.WarrantyMonths} mo.</td>" : "<td style=\"color:#888\">—</td>");
+            sb.Append($"<td class=\"r\">{it.Quantity}</td>");
+            sb.Append($"<td class=\"r\">LKR {it.UnitSellingPrice:N0}</td>");
+            if (hasItemDiscounts)
+                sb.Append(it.Discount > 0 ? $"<td class=\"r\">− LKR {it.Discount:N0}</td>" : "<td class=\"r\">—</td>");
+            sb.Append($"<td class=\"r\">LKR {it.LineTotal:N0}</td></tr>");
+        }
+        sb.Append("</tbody></table><hr/>");
+        sb.Append("<table style=\"width:60%;margin-left:auto\"><tbody>");
+        if (ItemDiscounts > 0)
+        {
+            sb.Append($"<tr><td>Gross Subtotal:</td><td class=\"r\">LKR {GrossSubtotal:N0}</td></tr>");
+            sb.Append($"<tr><td>Item Discounts:</td><td class=\"r\">− LKR {ItemDiscounts:N0}</td></tr>");
+        }
+        sb.Append($"<tr><td>Subtotal:</td><td class=\"r\">LKR {_sale.SubtotalLKR:N0}</td></tr>");
+        if (_sale.DiscountLKR > 0)
+            sb.Append($"<tr><td>Order Discount:</td><td class=\"r\">− LKR {_sale.DiscountLKR:N0}</td></tr>");
+        sb.Append($"<tr class=\"tot\"><td><b>TOTAL</b></td><td class=\"r\"><b>LKR {_sale.TotalLKR:N0}</b></td></tr>");
+        if (TotalSavings > 0)
+            sb.Append($"<tr><td style=\"color:green\">You saved:</td><td class=\"r\" style=\"color:green\">LKR {TotalSavings:N0}</td></tr>");
+        sb.Append("</tbody></table></body></html>");
+        return sb.ToString();
+    }
+
+    private static string E(string? v) => System.Net.WebUtility.HtmlEncode(v ?? "");
+
+    // ---- local DTOs ----
 
     private class SaleDto
     {
@@ -84,14 +690,42 @@ else if (_sale != null)
         public decimal SubtotalLKR { get; set; }
         public decimal DiscountLKR { get; set; }
         public decimal TotalLKR { get; set; }
+        public string CreatedByName { get; set; } = string.Empty;
         public List<SaleItemDto> Items { get; set; } = [];
     }
 
     private class SaleItemDto
     {
+        public Guid Id { get; set; }
+        public Guid BatchItemId { get; set; }
         public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string? Barcode { get; set; }
         public int Quantity { get; set; }
+        public int? WarrantyMonths { get; set; }
         public decimal UnitSellingPrice { get; set; }
+        public decimal Discount { get; set; }
         public decimal LineTotal { get; set; }
     }
+
+    private class BatchItemScanRow
+    {
+        public Guid BatchItemId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string BatchNumber { get; set; } = string.Empty;
+        public string Barcode { get; set; } = string.Empty;
+        public int RemainingQty { get; set; }
+        public decimal SellingPrice { get; set; }
+    }
+
+    private class EditRow
+    {
+        public Guid ItemId { get; set; }
+        public decimal Price { get; set; }
+        public decimal Discount { get; set; }
+        public int? WarrantyMonths { get; set; }
+    }
+
+    private record SettingDto(Guid Id, string Key, string Value);
 }

@@ -10,4 +10,5 @@ public class SaleItem : BaseEntity
     public decimal UnitSellingPrice { get; set; }
     public decimal Discount { get; set; } = 0;
     public decimal LineTotal { get; set; }
+    public int? WarrantyMonths { get; set; }
 }

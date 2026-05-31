@@ -1,0 +1,725 @@
+@page "/batches/{Id:guid}"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_batch == null)
+{
+    <MudAlert Severity="Severity.Error">Batch not found.</MudAlert>
+    <MudButton Class="mt-2" OnClick='() => Nav.NavigateTo("/batches")'>Back</MudButton>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Justify="Justify.SpaceBetween">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                           OnClick='() => Nav.NavigateTo("/batches")' />
+            <div>
+                <MudText Typo="Typo.h5">@_batch.BatchNumber</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@_batch.Supplier</MudText>
+            </div>
+        </MudStack>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
+                   OnClick="OpenEditBatchDialog">
+            Edit Batch
+        </MudButton>
+    </MudStack>
+
+    @* Batch header info *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="3">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Purchase Date</MudText>
+            <MudText Typo="Typo.body1">@_batch.PurchaseDate.ToString("dd MMM yyyy")</MudText>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Currencies</MudText>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@_batch.PurchaseCurrency</MudChip>
+                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small" />
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">@_batch.SellingCurrency</MudChip>
+            </MudStack>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Exchange Rate</MudText>
+            <MudText Typo="Typo.body1">1 @_batch.PurchaseCurrency = @_batch.ExchangeRate.ToString("N4") @_batch.SellingCurrency</MudText>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Total Cost (@_batch.SellingCurrency)</MudText>
+            <MudText Typo="Typo.body1">@_batch.SellingCurrency @_batch.TotalCost.ToString("N0")</MudText>
+        </MudItem>
+        @if (_batch.EstimatedArrival.HasValue)
+        {
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Est. Arrival</MudText>
+                <MudText Typo="Typo.body1">@_batch.EstimatedArrival.Value.ToString("dd MMM yyyy")</MudText>
+            </MudItem>
+        }
+        @if (!string.IsNullOrEmpty(_batch.Notes))
+        {
+            <MudItem xs="12">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Notes</MudText>
+                <MudText Typo="Typo.body2">@_batch.Notes</MudText>
+            </MudItem>
+        }
+    </MudGrid>
+
+    @* Items section *@
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h6">Items (@_batch.Items.Count)</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="() => _showAddItem = !_showAddItem">
+            Add Item
+        </MudButton>
+    </MudStack>
+
+    @* Add item panel *@
+    @if (_showAddItem)
+    {
+        <MudPaper Class="pa-4 mb-4" Outlined="true">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Add Batch Item</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="5">
+                    <MudAutocomplete T="ProductOption" Label="Search product..." Variant="Variant.Outlined"
+                                     SearchFunc="SearchProducts"
+                                     ToStringFunc="@(p => p?.Name ?? "")"
+                                     ValueChanged="p => _newItem.Product = p" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField @bind-Value="_newItem.Quantity" Label="Qty" Min="1"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField T="decimal" Value="_newItem.UnitCostPurchase"
+                                     Label="@($"Cost ({_batch.PurchaseCurrency})")"
+                                     Min="0.0001m" Format="N0" Variant="Variant.Outlined"
+                                     ValueChanged="@(v => { _newItem.UnitCostPurchase = v; })" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudNumericField @bind-Value="_newItem.SellingPrice"
+                                     Label="@($"Sell Price ({_batch.SellingCurrency})")"
+                                     Min="0" Format="N0" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    @if (_newItem.UnitCostPurchase > 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Cost @_batch.SellingCurrency ≈ @((_newItem.UnitCostPurchase * _batch!.ExchangeRate).ToString("N2"))
+                        </MudText>
+                    }
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Warranty Options <MudText Typo="Typo.caption" Color="Color.Secondary" Inline="true">(optional)</MudText></MudText>
+                    @if (_newItem.WarrantyOptions.Count > 0)
+                    {
+                        <MudSimpleTable Dense="true" Class="mb-2">
+                            <thead>
+                                <tr><th>Months</th><th>Price (LKR)</th><th>Default</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var wo in _newItem.WarrantyOptions)
+                                {
+                                    <tr>
+                                        <td style="width:100px"><MudNumericField @bind-Value="wo.WarrantyMonths" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                                        <td><MudNumericField @bind-Value="wo.SellingPriceLKR" Min="0" Format="N0" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                                        <td style="width:80px"><MudCheckBox @bind-Value="wo.IsDefault" /></td>
+                                        <td style="width:40px"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick='() => _newItem.WarrantyOptions.Remove(wo)' /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick='() => _newItem.WarrantyOptions.Add(new WarrantyEntry())'>
+                        Add Tier
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudStack Row="true">
+                        <MudButton Variant="Variant.Text" OnClick="() => { _showAddItem = false; _newItem = new(); }">
+                            Cancel
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="AddItemAsync" Disabled="_addingItem">
+                            @if (_addingItem)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            }
+                            Add Item
+                        </MudButton>
+                    </MudStack>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    }
+
+    @if (_batch.Items.Count == 0)
+    {
+        <MudText Color="Color.Secondary">No items in this batch yet. Use "Add Item" to get started.</MudText>
+    }
+    else
+    {
+        @* Desktop *@
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <MudTable Items="_batch.Items" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Product</MudTh>
+                    <MudTh>Barcode</MudTh>
+                    <MudTh>Qty</MudTh>
+                    <MudTh>Remaining</MudTh>
+                    <MudTh>Cost (@_batch.PurchaseCurrency)</MudTh>
+                    <MudTh>Cost (@_batch.SellingCurrency)</MudTh>
+                    <MudTh>Sell Price (@_batch.SellingCurrency)</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @{var item = context;}
+                    <MudTd>
+                        <MudText Typo="Typo.body2" Style="font-weight:500">@context.ProductName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.BrandName · @context.ProductTypeName</MudText>
+                    </MudTd>
+                    <MudTd>
+                        <MudText Typo="Typo.caption" Style="font-family:monospace">@(context.Barcode ?? "—")</MudText>
+                    </MudTd>
+                    <MudTd>@context.Quantity</MudTd>
+                    <MudTd><StockBadge Stock="@context.RemainingQty" /></MudTd>
+                    <MudTd>@context.UnitCostPurchase.ToString("N0")</MudTd>
+                    <MudTd>@context.UnitCostLocal.ToString("N2")</MudTd>
+                    <MudTd>@context.SellingPrice.ToString("N0")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick='() => OpenEditItemDialog(item)' />
+                        <MudIconButton Icon="@Icons.Material.Filled.PriceChange" Size="Size.Small"
+                                       Title="Update selling price"
+                                       OnClick='() => OpenPriceDialog(item)' />
+                        <MudIconButton Icon="@Icons.Material.Filled.SwapVert" Size="Size.Small"
+                                       Title="Adjust stock"
+                                       OnClick='() => OpenAdjustDialog(item)' />
+                        <AuthorizeView Roles="Admin" Context="authCtx">
+                            <Authorized>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                               Color="Color.Error"
+                                               Disabled="@(item.RemainingQty != item.Quantity)"
+                                               Title="@(item.RemainingQty != item.Quantity ? "Cannot delete: item has been sold" : "Delete item")"
+                                               OnClick='() => _ = ConfirmDeleteItemAsync(item)' />
+                            </Authorized>
+                        </AuthorizeView>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudHidden>
+
+        @* Mobile *@
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            @foreach (var item in _batch.Items)
+            {
+                <MudCard Class="mb-2">
+                    <MudCardContent>
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                            <div>
+                                <MudText Typo="Typo.subtitle2">@item.ProductName</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@item.BrandName</MudText>
+                            </div>
+                            <StockBadge Stock="@item.RemainingQty" />
+                        </MudStack>
+                        <MudStack Row="true" Class="mt-1" Spacing="4">
+                            <MudText Typo="Typo.caption">Qty: @item.Quantity</MudText>
+                            <MudText Typo="Typo.caption">Cost: @item.UnitCostPurchase.ToString("N0") @_batch.PurchaseCurrency</MudText>
+                            <MudText Typo="Typo.caption">Sell: @item.SellingPrice.ToString("N0") @_batch.SellingCurrency</MudText>
+                        </MudStack>
+                        @if (item.Barcode != null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Style="font-family:monospace">@item.Barcode</MudText>
+                        }
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick='() => OpenEditItemDialog(item)' />
+                        <MudIconButton Icon="@Icons.Material.Filled.PriceChange" Size="Size.Small"
+                                       OnClick='() => OpenPriceDialog(item)' />
+                        <MudIconButton Icon="@Icons.Material.Filled.SwapVert" Size="Size.Small"
+                                       OnClick='() => OpenAdjustDialog(item)' />
+                    </MudCardActions>
+                </MudCard>
+            }
+        </MudHidden>
+    }
+
+    @* Edit batch dialog *@
+    <MudDialog @bind-Visible="_editBatchOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }'>
+        <TitleContent><MudText Typo="Typo.h6">Edit Batch</MudText></TitleContent>
+        <DialogContent>
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_editBatch.Supplier" Label="Supplier" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_editBatch.PurchaseDate" Label="Purchase Date" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_editBatch.EstimatedArrival" Label="Est. Arrival (optional)"
+                                   Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect @bind-Value="_editBatch.PurchaseCurrency" Label="Purchase Currency" Variant="Variant.Outlined">
+                        @foreach (var c in _currencies)
+                        {
+                            <MudSelectItem Value="@c">@c</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect @bind-Value="_editBatch.SellingCurrency" Label="Selling Currency" Variant="Variant.Outlined">
+                        @foreach (var c in _currencies)
+                        {
+                            <MudSelectItem Value="@c">@c</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField @bind-Value="_editBatch.ExchangeRate"
+                                     Label="@($"1 {_editBatch.PurchaseCurrency} =")"
+                                     HelperText="@($"{_editBatch.ExchangeRate:N4} {_editBatch.SellingCurrency}")"
+                                     Format="N4" Variant="Variant.Outlined" HideSpinButtons="true" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_editBatch.Notes" Label="Notes" Variant="Variant.Outlined" Lines="2" />
+                </MudItem>
+            </MudGrid>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick='() => _editBatchOpen = false'>Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveBatchAsync">Save</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    @* Edit item dialog *@
+    <MudDialog @bind-Visible="_editItemOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }'>
+        <TitleContent><MudText Typo="Typo.h6">Edit Item</MudText></TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3">@_editItem.ProductName</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField @bind-Value="_editItem.Quantity" Label="Quantity" Min="1"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField @bind-Value="_editItem.UnitCostPurchase"
+                                     Label="@($"Cost ({_batch.PurchaseCurrency})")"
+                                     Format="N0" Variant="Variant.Outlined" HideSpinButtons="true" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField @bind-Value="_editItem.SellingPrice"
+                                     Label="@($"Sell Price ({_batch.SellingCurrency})")"
+                                     Format="N0" Variant="Variant.Outlined" HideSpinButtons="true" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Cost @_batch.SellingCurrency ≈ @((_editItem.UnitCostPurchase * (_batch?.ExchangeRate ?? 1)).ToString("N2"))
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Warranty Options <MudText Typo="Typo.caption" Color="Color.Secondary" Inline="true">(optional)</MudText></MudText>
+                    @if (_editItem.WarrantyOptions.Count > 0)
+                    {
+                        <MudSimpleTable Dense="true" Class="mb-2">
+                            <thead>
+                                <tr><th>Months</th><th>Price (LKR)</th><th>Default</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var wo in _editItem.WarrantyOptions)
+                                {
+                                    <tr>
+                                        <td style="width:100px"><MudNumericField @bind-Value="wo.WarrantyMonths" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                                        <td><MudNumericField @bind-Value="wo.SellingPriceLKR" Min="0" Format="N0" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                                        <td style="width:80px"><MudCheckBox @bind-Value="wo.IsDefault" /></td>
+                                        <td style="width:40px"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick='() => _editItem.WarrantyOptions.Remove(wo)' /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick='() => _editItem.WarrantyOptions.Add(new WarrantyEntry())'>
+                        Add Tier
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick='() => _editItemOpen = false'>Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveItemAsync">Save</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    @* Selling price dialog *@
+    <MudDialog @bind-Visible="_priceDialogOpen" Options='new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true }'>
+        <TitleContent><MudText Typo="Typo.h6">Update Selling Price</MudText></TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3">@_priceItem.ProductName</MudText>
+            <MudNumericField @bind-Value="_priceItem.SellingPrice"
+                             Label="@($"Selling Price ({_batch.SellingCurrency})")"
+                             Format="N0" Variant="Variant.Outlined" HideSpinButtons="true" />
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick='() => _priceDialogOpen = false'>Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePriceAsync">Update</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    @* Stock adjustment dialog *@
+    <MudDialog @bind-Visible="_adjustDialogOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }'>
+        <TitleContent><MudText Typo="Typo.h6">Adjust Stock</MudText></TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-1">@_adjustItem.ProductName</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                Current stock: @_adjustItem.RemainingQty
+            </MudText>
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudSelect @bind-Value="_adjustType" Label="Type" Variant="Variant.Outlined">
+                        <MudSelectItem T="string" Value='"Return"'>Return</MudSelectItem>
+                        <MudSelectItem T="string" Value='"Damaged"'>Damaged</MudSelectItem>
+                        <MudSelectItem T="string" Value='"Correction"'>Correction</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudNumericField @bind-Value="_adjustQty" Label="Quantity Change"
+                                     HelperText="Positive = add stock, Negative = remove stock"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_adjustReason" Label="Reason" Required="true"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick='() => _adjustDialogOpen = false'>Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAdjustmentAsync">Apply</MudButton>
+        </DialogActions>
+    </MudDialog>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private static readonly string[] _currencies =
+        ["JPY", "USD", "EUR", "GBP", "CNY", "AUD", "SGD", "KRW", "LKR", "INR"];
+
+    private BatchDto? _batch;
+    private bool _loading = true;
+
+    private bool _showAddItem;
+    private bool _addingItem;
+    private NewItemForm _newItem = new();
+
+    private bool _editBatchOpen;
+    private EditBatchForm _editBatch = new();
+
+    private bool _editItemOpen;
+    private EditItemForm _editItem = new();
+
+    private bool _priceDialogOpen;
+    private PriceItemForm _priceItem = new();
+
+    private bool _adjustDialogOpen;
+    private ItemRef _adjustItem = new();
+    private string _adjustType = "Correction";
+    private int _adjustQty;
+    private string _adjustReason = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _batch = await Api.GetAsync<BatchDto>($"api/batches/{Id}"); }
+        finally { _loading = false; }
+    }
+
+    private async Task<IEnumerable<ProductOption>> SearchProducts(string search, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return [];
+        var result = await Api.GetAsync<PagedResult<ProductOption>>(
+            $"api/products?search={Uri.EscapeDataString(search)}&pageSize=20");
+        return result?.Items ?? [];
+    }
+
+    private async Task AddItemAsync()
+    {
+        if (_newItem.Product == null || _newItem.Quantity <= 0 || _newItem.UnitCostPurchase <= 0)
+        {
+            Snackbar.Add("Product, quantity and unit cost are required.", Severity.Warning);
+            return;
+        }
+        _addingItem = true;
+        try
+        {
+            await Api.PostAsync<BatchDto>($"api/batches/{Id}/items", new[]
+            {
+                new
+                {
+                    ProductId = _newItem.Product!.Id,
+                    Quantity = _newItem.Quantity,
+                    UnitCostPurchase = _newItem.UnitCostPurchase,
+                    SellingPrice = _newItem.SellingPrice,
+                    WarrantyOptions = _newItem.WarrantyOptions
+                        .Select(wo => new { wo.WarrantyMonths, SellingPriceLKR = wo.SellingPriceLKR, wo.IsDefault })
+                        .ToList()
+                }
+            });
+            Snackbar.Add("Item added.", Severity.Success);
+            _showAddItem = false;
+            _newItem = new();
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+        finally { _addingItem = false; }
+    }
+
+    private void OpenEditBatchDialog()
+    {
+        _editBatch = new EditBatchForm
+        {
+            Supplier = _batch!.Supplier,
+            PurchaseDate = _batch.PurchaseDate,
+            PurchaseCurrency = _batch.PurchaseCurrency,
+            SellingCurrency = _batch.SellingCurrency,
+            ExchangeRate = _batch.ExchangeRate,
+            EstimatedArrival = _batch.EstimatedArrival,
+            Notes = _batch.Notes
+        };
+        _editBatchOpen = true;
+    }
+
+    private async Task SaveBatchAsync()
+    {
+        try
+        {
+            await Api.PutAsync($"api/batches/{Id}", new
+            {
+                PurchaseDate = _editBatch.PurchaseDate,
+                Supplier = _editBatch.Supplier,
+                PurchaseCurrency = _editBatch.PurchaseCurrency,
+                SellingCurrency = _editBatch.SellingCurrency,
+                ExchangeRate = _editBatch.ExchangeRate,
+                EstimatedArrival = _editBatch.EstimatedArrival,
+                Notes = _editBatch.Notes
+            });
+            Snackbar.Add("Batch updated.", Severity.Success);
+            _editBatchOpen = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+    }
+
+    private void OpenEditItemDialog(BatchItemDto item)
+    {
+        _editItem = new EditItemForm
+        {
+            Id = item.Id,
+            ProductName = item.ProductName,
+            Quantity = item.Quantity,
+            UnitCostPurchase = item.UnitCostPurchase,
+            SellingPrice = item.SellingPrice,
+            WarrantyOptions = item.WarrantyOptions
+                .Select(wo => new WarrantyEntry { WarrantyMonths = wo.WarrantyMonths, SellingPriceLKR = wo.SellingPriceLKR, IsDefault = wo.IsDefault })
+                .ToList()
+        };
+        _editItemOpen = true;
+    }
+
+    private async Task SaveItemAsync()
+    {
+        try
+        {
+            await Api.PutAsync($"api/batches/{Id}/items/{_editItem.Id}", new
+            {
+                Quantity = _editItem.Quantity,
+                UnitCostPurchase = _editItem.UnitCostPurchase,
+                SellingPrice = _editItem.SellingPrice,
+                WarrantyOptions = _editItem.WarrantyOptions
+                    .Select(wo => new { wo.WarrantyMonths, SellingPriceLKR = wo.SellingPriceLKR, wo.IsDefault })
+                    .ToList()
+            });
+            Snackbar.Add("Item updated.", Severity.Success);
+            _editItemOpen = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+    }
+
+    private void OpenPriceDialog(BatchItemDto item)
+    {
+        _priceItem = new PriceItemForm { Id = item.Id, ProductName = item.ProductName, SellingPrice = item.SellingPrice };
+        _priceDialogOpen = true;
+    }
+
+    private async Task SavePriceAsync()
+    {
+        try
+        {
+            await Api.PutAsync($"api/batches/{Id}/items/{_priceItem.Id}/selling-price",
+                new { SellingPrice = _priceItem.SellingPrice });
+            Snackbar.Add("Selling price updated.", Severity.Success);
+            _priceDialogOpen = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+    }
+
+    private void OpenAdjustDialog(BatchItemDto item)
+    {
+        _adjustItem = new ItemRef { Id = item.Id, ProductName = item.ProductName, RemainingQty = item.RemainingQty };
+        _adjustType = "Correction";
+        _adjustQty = 0;
+        _adjustReason = string.Empty;
+        _adjustDialogOpen = true;
+    }
+
+    private async Task SaveAdjustmentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_adjustReason))
+        {
+            Snackbar.Add("Reason is required.", Severity.Warning);
+            return;
+        }
+        if (_adjustQty == 0)
+        {
+            Snackbar.Add("Quantity change cannot be zero.", Severity.Warning);
+            return;
+        }
+        try
+        {
+            await Api.PostAsync("api/stock-adjustments", new
+            {
+                BatchItemId = _adjustItem.Id,
+                Type = _adjustType,
+                QuantityChange = _adjustQty,
+                Reason = _adjustReason
+            });
+            Snackbar.Add("Stock adjusted.", Severity.Success);
+            _adjustDialogOpen = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task ConfirmDeleteItemAsync(BatchItemDto item)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Item",
+            $"Delete {item.ProductName} from this batch?",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirm != true) return;
+        try
+        {
+            await Api.DeleteAsync($"api/batches/{Id}/items/{item.Id}");
+            Snackbar.Add("Item deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+    }
+
+    private class BatchDto
+    {
+        public Guid Id { get; set; }
+        public string BatchNumber { get; set; } = string.Empty;
+        public string Supplier { get; set; } = string.Empty;
+        public DateTime PurchaseDate { get; set; }
+        public string PurchaseCurrency { get; set; } = "JPY";
+        public string SellingCurrency { get; set; } = "LKR";
+        public decimal ExchangeRate { get; set; }
+        public decimal TotalCost { get; set; }
+        public DateTime? EstimatedArrival { get; set; }
+        public string? Notes { get; set; }
+        public List<BatchItemDto> Items { get; set; } = [];
+    }
+
+    private class WarrantyEntry
+    {
+        public int WarrantyMonths { get; set; } = 12;
+        public decimal SellingPriceLKR { get; set; }
+        public bool IsDefault { get; set; }
+    }
+
+    private class BatchItemDto
+    {
+        public Guid Id { get; set; }
+        public Guid ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string ProductTypeName { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal UnitCostPurchase { get; set; }
+        public decimal UnitCostLocal { get; set; }
+        public decimal SellingPrice { get; set; }
+        public int RemainingQty { get; set; }
+        public string? Barcode { get; set; }
+        public List<WarrantyEntry> WarrantyOptions { get; set; } = [];
+    }
+
+    private class ProductOption
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string ProductTypeName { get; set; } = string.Empty;
+        public int TotalStock { get; set; }
+        public decimal? SellingPrice { get; set; }
+        public override string ToString() => Name;
+    }
+
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; }
+
+    private class NewItemForm
+    {
+        public ProductOption? Product { get; set; }
+        public int Quantity { get; set; } = 1;
+        public decimal UnitCostPurchase { get; set; }
+        public decimal SellingPrice { get; set; }
+        public List<WarrantyEntry> WarrantyOptions { get; set; } = [];
+    }
+
+    private class EditBatchForm
+    {
+        public string Supplier { get; set; } = string.Empty;
+        public DateTime? PurchaseDate { get; set; }
+        public string PurchaseCurrency { get; set; } = "JPY";
+        public string SellingCurrency { get; set; } = "LKR";
+        public decimal ExchangeRate { get; set; }
+        public DateTime? EstimatedArrival { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    private class EditItemForm
+    {
+        public Guid Id { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal UnitCostPurchase { get; set; }
+        public decimal SellingPrice { get; set; }
+        public List<WarrantyEntry> WarrantyOptions { get; set; } = [];
+    }
+
+    private class PriceItemForm
+    {
+        public Guid Id { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public decimal SellingPrice { get; set; }
+    }
+
+    private class ItemRef
+    {
+        public Guid Id { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public int RemainingQty { get; set; }
+    }
+}
