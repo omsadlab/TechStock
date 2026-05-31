@@ -1,0 +1,222 @@
+@namespace TechStock.Blazor.Pages.Admin
+@page "/admin/backup"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Components.Forms
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudText Typo="Typo.h4" Class="mb-6">Backup &amp; Export</MudText>
+
+<MudGrid Spacing="4">
+
+    @* ── Card 1: Data Export ── *@
+    <MudItem xs="12" md="4">
+        <MudCard Style="height:100%">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Color="Color.Primary" Size="Size.Large" />
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Export All Data (Excel)</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Always works on any server setup</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body2">
+                    Downloads all records as a multi-sheet Excel file including products, batches,
+                    sales, warranty claims, stock adjustments and settings.
+                    Compatible IDs are included so the file can be re-imported later.
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           Disabled="_exportLoading"
+                           OnClick="DownloadExportAsync" FullWidth="true">
+                    @if (_exportLoading) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                    Download Export
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    @* ── Card 2: SQL Backup ── *@
+    <MudItem xs="12" md="4">
+        <MudCard Style="height:100%">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudIcon Icon="@Icons.Material.Filled.Storage" Color="Color.Warning" Size="Size.Large" />
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">SQL Server Backup (.bak)</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Same-server only</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                    Only works when SQL Server runs on the same machine as the API.
+                </MudAlert>
+                <MudText Typo="Typo.body2">
+                    Generates a native SQL Server <code>.bak</code> file that can be restored
+                    via SSMS. Not available on shared hosting or remote SQL Server setups —
+                    use Data Export instead.
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           Disabled="_sqlLoading"
+                           OnClick="DownloadSqlBackupAsync" FullWidth="true">
+                    @if (_sqlLoading) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                    Download SQL Backup
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    @* ── Card 3: Import ── *@
+    <MudItem xs="12" md="4">
+        <MudCard Style="height:100%">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudIcon Icon="@Icons.Material.Filled.Upload" Color="Color.Success" Size="Size.Large" />
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Import from Excel</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Restore from a TechStock export file</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                    Existing records (same ID) are skipped — import is additive and safe to repeat.
+                </MudAlert>
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    Select a <code>.xlsx</code> file previously exported from TechStock.
+                    All tables are imported in dependency order within a single transaction.
+                </MudText>
+                <InputFile id="importFileInput" OnChange="OnFileSelected"
+                           accept=".xlsx" style="display:none" />
+                <MudButton HtmlTag="label" Variant="Variant.Outlined" Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.AttachFile"
+                           for="importFileInput" FullWidth="true" Class="mb-2">
+                    @(_selectedFileName ?? "Choose File…")
+                </MudButton>
+
+                @if (_importResult != null)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">
+                        Import complete!
+                        <MudText Typo="Typo.caption" Style="display:block;margin-top:4px">
+                            Brands: @_importResult.Brands |
+                            Products: @_importResult.Products |
+                            Batches: @_importResult.Batches |
+                            Sales: @_importResult.Sales |
+                            Claims: @_importResult.WarrantyClaims |
+                            Settings: @_importResult.Settings
+                        </MudText>
+                    </MudAlert>
+                }
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Success"
+                           StartIcon="@Icons.Material.Filled.CloudUpload"
+                           Disabled="@(_selectedFile == null || _importLoading)"
+                           OnClick="RunImportAsync" FullWidth="true">
+                    @if (_importLoading) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                    Import
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+</MudGrid>
+
+@code {
+    private bool _exportLoading;
+    private bool _sqlLoading;
+    private bool _importLoading;
+
+    private IBrowserFile? _selectedFile;
+    private string? _selectedFileName;
+    private ImportResult? _importResult;
+
+    private async Task DownloadExportAsync()
+    {
+        _exportLoading = true;
+        try
+        {
+            var bytes = await Api.GetBytesAsync("api/admin/backup/data-export");
+            await JS.InvokeVoidAsync("downloadFile",
+                $"TechStock_export_{DateTime.Now:yyyyMMdd}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                bytes);
+        }
+        catch (Exception ex) { Snackbar.Add($"Export failed: {ex.Message}", Severity.Error); }
+        finally { _exportLoading = false; }
+    }
+
+    private async Task DownloadSqlBackupAsync()
+    {
+        _sqlLoading = true;
+        try
+        {
+            var bytes = await Api.GetBytesAsync("api/admin/backup/sql");
+            await JS.InvokeVoidAsync("downloadFile",
+                $"TechStock_{DateTime.Now:yyyyMMdd}.bak",
+                "application/octet-stream",
+                bytes);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message.Contains("SQL backup") || ex.Message.Contains("backup")
+                ? ex.Message
+                : $"SQL backup failed: {ex.Message}",
+                Severity.Error, cfg => cfg.VisibleStateDuration = 8000);
+        }
+        finally { _sqlLoading = false; }
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+        _selectedFileName = e.File.Name;
+        _importResult = null;
+        StateHasChanged();
+    }
+
+    private async Task RunImportAsync()
+    {
+        if (_selectedFile == null) return;
+        _importLoading = true;
+        _importResult = null;
+        try
+        {
+            using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 200 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var buffer = ms.ToArray();
+            _importResult = await Api.PostMultipartAsync<ImportResult>("api/admin/backup/import", buffer, _selectedFile.Name);
+            Snackbar.Add("Import completed successfully!", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Import failed: {ex.Message}", Severity.Error); }
+        finally { _importLoading = false; }
+    }
+
+    private class ImportResult
+    {
+        public int Brands { get; set; }
+        public int ProductTypes { get; set; }
+        public int ConfigTypes { get; set; }
+        public int Products { get; set; }
+        public int ProductConfigs { get; set; }
+        public int Batches { get; set; }
+        public int BatchItems { get; set; }
+        public int WarrantyOptions { get; set; }
+        public int Sales { get; set; }
+        public int SaleItems { get; set; }
+        public int WarrantyClaims { get; set; }
+        public int StockAdjustments { get; set; }
+        public int Settings { get; set; }
+    }
+}

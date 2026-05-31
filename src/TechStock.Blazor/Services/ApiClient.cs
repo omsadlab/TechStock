@@ -88,4 +88,16 @@ public class ApiClient
         await SetAuthHeaderAsync();
         return await _http.GetByteArrayAsync(url);
     }
+
+    public async Task<T?> PostMultipartAsync<T>(string url, byte[] fileBytes, string fileName)
+    {
+        await SetAuthHeaderAsync();
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(fileBytes);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        content.Add(fileContent, "file", fileName);
+        var response = await _http.PostAsync(url, content);
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException(await ReadErrorAsync(response));
+        return await response.Content.ReadFromJsonAsync<T>();
+    }
 }
