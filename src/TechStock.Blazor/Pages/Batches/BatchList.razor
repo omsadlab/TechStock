@@ -1,0 +1,107 @@
+@page "/batches"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+
+<MudText Typo="Typo.h4" Class="mb-4">Batches</MudText>
+
+<MudStack Row="true" Class="mb-3">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick='() => Nav.NavigateTo("/batches/new")'>
+        New Batch
+    </MudButton>
+</MudStack>
+
+@if (_loading) { <MudProgressLinear Indeterminate="true" /> }
+else
+{
+    <MudTable Items="_batches" Hover="true" Dense="true">
+        <HeaderContent>
+            <MudTh @onclick='() => SortAsync("batchnumber")' Style="cursor:pointer;user-select:none">
+                Batch No <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("batchnumber")" />
+            </MudTh>
+            <MudTh @onclick='() => SortAsync("supplier")' Style="cursor:pointer;user-select:none">
+                Supplier <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("supplier")" />
+            </MudTh>
+            <MudTh @onclick='() => SortAsync("date")' Style="cursor:pointer;user-select:none">
+                Purchase Date <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("date")" />
+            </MudTh>
+            <MudTh>Currencies</MudTh>
+            <MudTh>Exchange Rate</MudTh>
+            <MudTh @onclick='() => SortAsync("totalcost")' Style="cursor:pointer;user-select:none">
+                Total Cost <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("totalcost")" />
+            </MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.BatchNumber</MudTd>
+            <MudTd>@context.Supplier</MudTd>
+            <MudTd>@context.PurchaseDate.ToString("dd MMM yyyy")</MudTd>
+            <MudTd>
+                <MudStack Row="true" Spacing="1">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@context.PurchaseCurrency</MudChip>
+                    <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small" />
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">@context.SellingCurrency</MudChip>
+                </MudStack>
+            </MudTd>
+            <MudTd>@context.ExchangeRate.ToString("N4")</MudTd>
+            <MudTd>@context.SellingCurrency @context.TotalCost.ToString("N0")</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               OnClick='() => Nav.NavigateTo($"/batches/{context.Id}")' />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    <MudPagination Count="_totalPages" SelectedChanged="OnPageChanged" Class="mt-3" />
+}
+
+@code {
+    private List<BatchDto> _batches = [];
+    private bool _loading = true;
+    private int _page = 1;
+    private int _totalPages = 1;
+    private string _sortBy = "date";
+    private bool _sortDesc = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var url = $"api/batches?page={_page}&pageSize=20&sortBy={_sortBy}&sortDir={(_sortDesc ? "desc" : "asc")}";
+            var result = await Api.GetAsync<PagedResult<BatchDto>>(url);
+            if (result != null) { _batches = result.Items; _totalPages = result.TotalPages; }
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page) { _page = page; await LoadAsync(); }
+
+    private async Task SortAsync(string col)
+    {
+        if (_sortBy == col) _sortDesc = !_sortDesc;
+        else { _sortBy = col; _sortDesc = false; }
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private string SortArrow() => _sortDesc ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward;
+    private string SortVis(string col) => _sortBy == col ? "vertical-align:middle" : "visibility:hidden";
+
+    private class BatchDto
+    {
+        public Guid Id { get; set; }
+        public string BatchNumber { get; set; } = string.Empty;
+        public string Supplier { get; set; } = string.Empty;
+        public DateTime PurchaseDate { get; set; }
+        public string PurchaseCurrency { get; set; } = "JPY";
+        public string SellingCurrency { get; set; } = "LKR";
+        public decimal ExchangeRate { get; set; }
+        public decimal TotalCost { get; set; }
+    }
+
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; public int TotalPages { get; set; } }
+}

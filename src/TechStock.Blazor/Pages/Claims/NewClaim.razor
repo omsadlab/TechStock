@@ -1,0 +1,242 @@
+@page "/claims/new"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick='() => Nav.NavigateTo("/claims")' />
+    <MudText Typo="Typo.h4">New Warranty Claim</MudText>
+</MudStack>
+
+@* Step 1: Search Invoice *@
+<MudPaper Class="pa-4 mb-3" Outlined="true">
+    <MudText Typo="Typo.subtitle1" Class="mb-3">Step 1 — Find Invoice</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="8">
+            <MudTextField @bind-Value="_searchTerm" Label="Invoice number or customer name"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                          OnAdornmentClick="SearchSalesAsync"
+                          OnKeyDown="OnSearchKeyDown" />
+        </MudItem>
+        <MudItem xs="12" sm="4" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                       OnClick="SearchSalesAsync" Disabled="_searching">
+                @(_searching ? "Searching..." : "Search")
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @if (_searchDone && _sales.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-2">No sales found.</MudAlert>
+    }
+    else if (_sales.Count > 0)
+    {
+        <MudSimpleTable Dense="true" Class="mt-3">
+            <thead>
+                <tr><th>Invoice #</th><th>Date</th><th>Customer</th><th>Items</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var sale in _sales)
+                {
+                    <tr>
+                        <td style="font-family:monospace">@sale.InvoiceNumber</td>
+                        <td>@sale.SaleDate.ToString("dd MMM yyyy")</td>
+                        <td>@(sale.CustomerName ?? "Walk-in")</td>
+                        <td>@sale.Items.Count item(s)</td>
+                        <td>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       OnClick='() => SelectSale(sale)'
+                                       Color="@(_selectedSale?.Id == sale.Id ? Color.Primary : Color.Default)">
+                                @(_selectedSale?.Id == sale.Id ? "Selected" : "Select")
+                            </MudButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudPaper>
+
+@* Step 2: Select Item *@
+@if (_selectedSale != null)
+{
+    <MudPaper Class="pa-4 mb-3" Outlined="true">
+        <MudText Typo="Typo.subtitle1" Class="mb-3">Step 2 — Select Item from @_selectedSale.InvoiceNumber</MudText>
+        <MudSimpleTable Dense="true">
+            <thead>
+                <tr><th>Product</th><th>Barcode</th><th>Warranty</th><th>Qty</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _selectedSale.Items)
+                {
+                    <tr style="@(_selectedItemId == item.Id ? "background:#e3f2fd" : "")">
+                        <td>
+                            <MudText Typo="Typo.body2">@item.ProductName</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@item.BrandName</MudText>
+                        </td>
+                        <td style="font-family:monospace">@(item.Barcode ?? "—")</td>
+                        <td>@(item.WarrantyMonths.HasValue ? $"{item.WarrantyMonths} mo." : "—")</td>
+                        <td>@item.Quantity</td>
+                        <td>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       OnClick='() => SelectItem(item)'
+                                       Color="@(_selectedItemId == item.Id ? Color.Primary : Color.Default)">
+                                @(_selectedItemId == item.Id ? "Claimed" : "Claim this")
+                            </MudButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@* Step 3: Claim Form *@
+@if (_selectedItemId.HasValue)
+{
+    <MudPaper Class="pa-4 mb-3" Outlined="true">
+        <MudText Typo="Typo.subtitle1" Class="mb-3">Step 3 — Claim Details</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect @bind-Value="_claimType" Label="Claim Type" Variant="Variant.Outlined">
+                    <MudSelectItem T="string" Value='"WholeItem"'>Whole Item Replacement</MudSelectItem>
+                    <MudSelectItem T="string" Value='"SubComponent"'>Sub-Component Replacement</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            @if (_claimType == "SubComponent")
+            {
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_componentName" Label="Component Name (e.g. Hard Disk, Battery)"
+                                  Variant="Variant.Outlined" Required="true" />
+                </MudItem>
+            }
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_issueDescription" Label="Issue Description"
+                              Variant="Variant.Outlined" Lines="3" Required="true"
+                              HelperText="Describe what the customer reported" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_claimedDate" Label="Claim Date"
+                               Variant="Variant.Outlined" DateFormat="yyyy-MM-dd" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudStack Row="true">
+                    <MudButton Variant="Variant.Text" OnClick='() => { _selectedItemId = null; _selectedSale = null; }'>
+                        Cancel
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="SubmitClaimAsync" Disabled="_submitting">
+                        @(_submitting ? "Submitting..." : "Submit Claim")
+                    </MudButton>
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+
+@code {
+    private string _searchTerm = string.Empty;
+    private bool _searching;
+    private bool _searchDone;
+    private List<SaleResult> _sales = [];
+    private SaleResult? _selectedSale;
+    private Guid? _selectedItemId;
+
+    private string _claimType = "WholeItem";
+    private string? _componentName;
+    private string _issueDescription = string.Empty;
+    private DateTime? _claimedDate = DateTime.Today;
+    private bool _submitting;
+
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SearchSalesAsync();
+    }
+
+    private async Task SearchSalesAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_searchTerm)) return;
+        _searching = true;
+        _searchDone = false;
+        _sales = [];
+        _selectedSale = null;
+        _selectedItemId = null;
+        try
+        {
+            var url = $"api/sales?search={Uri.EscapeDataString(_searchTerm.Trim())}&pageSize=10";
+            var result = await Api.GetAsync<PagedResult<SaleResult>>(url);
+            _sales = result?.Items ?? [];
+        }
+        catch { _sales = []; }
+        finally { _searching = false; _searchDone = true; }
+    }
+
+    private void SelectSale(SaleResult sale)
+    {
+        _selectedSale = sale;
+        _selectedItemId = null;
+    }
+
+    private void SelectItem(SaleItemResult item)
+    {
+        _selectedItemId = item.Id;
+    }
+
+    private async Task SubmitClaimAsync()
+    {
+        if (!_selectedItemId.HasValue) return;
+        if (string.IsNullOrWhiteSpace(_issueDescription))
+        {
+            Snackbar.Add("Issue description is required.", Severity.Warning);
+            return;
+        }
+        if (_claimType == "SubComponent" && string.IsNullOrWhiteSpace(_componentName))
+        {
+            Snackbar.Add("Component name is required for sub-component claims.", Severity.Warning);
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            var payload = new
+            {
+                SaleItemId = _selectedItemId.Value,
+                ClaimType = _claimType,
+                ComponentName = _claimType == "SubComponent" ? _componentName : null,
+                IssueDescription = _issueDescription,
+                ClaimedAt = (DateTime?)_claimedDate
+            };
+            var result = await Api.PostAsync<ClaimCreated>("api/claims", payload);
+            Snackbar.Add("Claim created successfully.", Severity.Success);
+            if (result != null) Nav.NavigateTo($"/claims/{result.Id}");
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+        finally { _submitting = false; }
+    }
+
+    private class SaleResult
+    {
+        public Guid Id { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public DateTime SaleDate { get; set; }
+        public string? CustomerName { get; set; }
+        public List<SaleItemResult> Items { get; set; } = [];
+    }
+
+    private class SaleItemResult
+    {
+        public Guid Id { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string? Barcode { get; set; }
+        public int Quantity { get; set; }
+        public int? WarrantyMonths { get; set; }
+    }
+
+    private class PagedResult<T> { public List<T> Items { get; set; } = []; }
+    private record ClaimCreated(Guid Id);
+}

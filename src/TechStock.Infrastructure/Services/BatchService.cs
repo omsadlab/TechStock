@@ -27,7 +27,18 @@ public class BatchService : IBatchService
         if (query.To.HasValue) q = q.Where(b => b.PurchaseDate <= query.To.Value);
 
         var total = await q.CountAsync();
-        var batches = await q.OrderByDescending(b => b.PurchaseDate)
+        var ordered = (query.SortBy?.ToLower(), query.SortDir?.ToLower() == "desc") switch
+        {
+            ("batchnumber", false) => q.OrderBy(b => b.BatchNumber),
+            ("batchnumber", true)  => q.OrderByDescending(b => b.BatchNumber),
+            ("supplier", false)    => q.OrderBy(b => b.Supplier),
+            ("supplier", true)     => q.OrderByDescending(b => b.Supplier),
+            ("totalcost", false)   => q.OrderBy(b => b.TotalCostLKR),
+            ("totalcost", true)    => q.OrderByDescending(b => b.TotalCostLKR),
+            ("date", false)        => q.OrderBy(b => b.PurchaseDate),
+            _                      => q.OrderByDescending(b => b.PurchaseDate),
+        };
+        var batches = await ordered
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
             .ToListAsync();
@@ -46,6 +57,7 @@ public class BatchService : IBatchService
         var batch = await _db.Batches
             .Include(b => b.Items).ThenInclude(i => i.Product).ThenInclude(p => p.Brand)
             .Include(b => b.Items).ThenInclude(i => i.Product).ThenInclude(p => p.ProductType)
+            .Include(b => b.Items).ThenInclude(i => i.WarrantyOptions)
             .FirstOrDefaultAsync(b => b.Id == id);
         return batch == null ? null : _mapper.Map<BatchDto>(batch);
     }
@@ -59,7 +71,8 @@ public class BatchService : IBatchService
             BatchNumber = $"BT-{year}-{(count + 1):D3}",
             PurchaseDate = request.PurchaseDate,
             Supplier = request.Supplier,
-            Currency = request.Currency,
+            Currency = request.PurchaseCurrency,
+            SellingCurrency = request.SellingCurrency,
             ExchangeRate = request.ExchangeRate,
             EstimatedArrival = request.EstimatedArrival,
             Notes = request.Notes,
@@ -84,6 +97,8 @@ public class BatchService : IBatchService
 
         batch.PurchaseDate = request.PurchaseDate;
         batch.Supplier = request.Supplier;
+        batch.Currency = request.PurchaseCurrency;
+        batch.SellingCurrency = request.SellingCurrency;
         batch.ExchangeRate = request.ExchangeRate;
         batch.EstimatedArrival = request.EstimatedArrival;
         batch.Notes = request.Notes;
@@ -116,10 +131,36 @@ public class BatchService : IBatchService
             .FirstOrDefaultAsync(b => b.Id == batchId)
             ?? throw new NotFoundException($"Batch {batchId} not found.");
 
-        foreach (var item in items)
-            AddItem(batch, item);
+        var newItems = new List<BatchItem>();
+        var existingCount = batch.Items.Count;
+        for (int i = 0; i < items.Count; i++)
+        {
+            var request = items[i];
+            var unitCostLocal = Math.Round(request.UnitCostPurchase * batch.ExchangeRate, 2);
+            var newItem = new BatchItem
+            {
+                BatchId = batchId,
+                ProductId = request.ProductId,
+                Quantity = request.Quantity,
+                UnitCostJPY = request.UnitCostPurchase,
+                UnitCostLKR = unitCostLocal,
+                SellingPriceLKR = request.SellingPrice,
+                RemainingQty = request.Quantity,
+                Barcode = GenerateBarcode(batch, existingCount + i + 1),
+            };
+            foreach (var wo in request.WarrantyOptions)
+                newItem.WarrantyOptions.Add(new BatchItemWarrantyOption
+                {
+                    WarrantyMonths = wo.WarrantyMonths,
+                    SellingPriceLKR = wo.SellingPriceLKR,
+                    IsDefault = wo.IsDefault,
+                });
+            _db.BatchItems.Add(newItem);
+            newItems.Add(newItem);
+        }
 
-        batch.TotalCostLKR = batch.Items.Sum(i => i.UnitCostLKR * i.Quantity);
+        batch.TotalCostLKR = batch.Items.Sum(i => i.UnitCostLKR * i.Quantity)
+            + newItems.Sum(i => i.UnitCostLKR * i.Quantity);
         await _db.SaveChangesAsync();
         return (await GetByIdAsync(batchId))!;
     }
@@ -130,14 +171,24 @@ public class BatchService : IBatchService
             .FirstOrDefaultAsync(b => b.Id == batchId)
             ?? throw new NotFoundException($"Batch {batchId} not found.");
 
-        var item = batch.Items.FirstOrDefault(i => i.Id == itemId)
+        var item = await _db.BatchItems.Include(i => i.WarrantyOptions)
+            .FirstOrDefaultAsync(i => i.Id == itemId && i.BatchId == batchId)
             ?? throw new NotFoundException($"BatchItem {itemId} not found.");
 
         item.Quantity = request.Quantity;
-        item.UnitCostJPY = request.UnitCostJPY;
-        item.UnitCostLKR = Math.Round(request.UnitCostJPY * batch.ExchangeRate, 2);
-        item.SellingPriceLKR = request.SellingPriceLKR;
+        item.UnitCostJPY = request.UnitCostPurchase;
+        item.UnitCostLKR = Math.Round(request.UnitCostPurchase * batch.ExchangeRate, 2);
+        item.SellingPriceLKR = request.SellingPrice;
         item.UpdatedAt = DateTime.UtcNow;
+
+        _db.BatchItemWarrantyOptions.RemoveRange(item.WarrantyOptions);
+        foreach (var wo in request.WarrantyOptions)
+            item.WarrantyOptions.Add(new BatchItemWarrantyOption
+            {
+                WarrantyMonths = wo.WarrantyMonths,
+                SellingPriceLKR = wo.SellingPriceLKR,
+                IsDefault = wo.IsDefault,
+            });
 
         batch.TotalCostLKR = batch.Items.Sum(i => i.UnitCostLKR * i.Quantity);
         await _db.SaveChangesAsync();
@@ -178,17 +229,89 @@ public class BatchService : IBatchService
         await _db.SaveChangesAsync();
     }
 
+    public async Task<BatchItemScanDto?> GetItemByBarcodeAsync(string barcode)
+    {
+        var item = await _db.BatchItems
+            .Include(i => i.Product).ThenInclude(p => p.Brand)
+            .Include(i => i.Batch)
+            .Include(i => i.WarrantyOptions)
+            .FirstOrDefaultAsync(i => i.Barcode == barcode);
+        if (item == null) return null;
+        return new BatchItemScanDto(
+            item.Id, item.ProductId, item.Product.Name, item.Product.Brand.Name,
+            item.Batch.BatchNumber, item.Batch.Currency, item.Batch.SellingCurrency,
+            item.Batch.ExchangeRate, item.RemainingQty, item.SellingPriceLKR, item.Barcode!
+        )
+        {
+            WarrantyOptions = item.WarrantyOptions.Select(ToWarrantyDto).ToList()
+        };
+    }
+
+    public async Task<List<BatchItemScanDto>> SearchAvailableItemsAsync(string? search)
+    {
+        var q = _db.BatchItems
+            .Include(i => i.Product).ThenInclude(p => p.Brand)
+            .Include(i => i.Batch)
+            .Include(i => i.WarrantyOptions)
+            .Where(i => i.RemainingQty > 0);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            q = q.Where(i =>
+                i.Product.Name.ToLower().Contains(term) ||
+                i.Product.Brand.Name.ToLower().Contains(term) ||
+                (i.Barcode != null && i.Barcode.ToLower().Contains(term)));
+        }
+
+        var items = await q
+            .OrderBy(i => i.Product.Name)
+            .ThenBy(i => i.Batch.BatchNumber)
+            .Take(100)
+            .ToListAsync();
+
+        return items.Select(i => new BatchItemScanDto(
+            i.Id, i.ProductId, i.Product.Name, i.Product.Brand.Name,
+            i.Batch.BatchNumber, i.Batch.Currency, i.Batch.SellingCurrency,
+            i.Batch.ExchangeRate, i.RemainingQty, i.SellingPriceLKR, i.Barcode!
+        )
+        {
+            WarrantyOptions = i.WarrantyOptions.Select(ToWarrantyDto).ToList()
+        }).ToList();
+    }
+
+    private static WarrantyOptionDto ToWarrantyDto(BatchItemWarrantyOption wo) =>
+        new() { WarrantyMonths = wo.WarrantyMonths, SellingPriceLKR = wo.SellingPriceLKR, IsDefault = wo.IsDefault };
+
     private static void AddItem(Batch batch, CreateBatchItemRequest request)
     {
-        var unitCostLKR = Math.Round(request.UnitCostJPY * batch.ExchangeRate, 2);
-        batch.Items.Add(new BatchItem
+        var itemSeq = batch.Items.Count + 1;
+        var unitCostLocal = Math.Round(request.UnitCostPurchase * batch.ExchangeRate, 2);
+        var item = new BatchItem
         {
             ProductId = request.ProductId,
             Quantity = request.Quantity,
-            UnitCostJPY = request.UnitCostJPY,
-            UnitCostLKR = unitCostLKR,
-            SellingPriceLKR = request.SellingPriceLKR,
+            UnitCostJPY = request.UnitCostPurchase,
+            UnitCostLKR = unitCostLocal,
+            SellingPriceLKR = request.SellingPrice,
             RemainingQty = request.Quantity,
-        });
+            Barcode = GenerateBarcode(batch, itemSeq),
+        };
+        foreach (var wo in request.WarrantyOptions)
+            item.WarrantyOptions.Add(new BatchItemWarrantyOption
+            {
+                WarrantyMonths = wo.WarrantyMonths,
+                SellingPriceLKR = wo.SellingPriceLKR,
+                IsDefault = wo.IsDefault,
+            });
+        batch.Items.Add(item);
+    }
+
+    private static string GenerateBarcode(Batch batch, int itemSeq)
+    {
+        var parts = batch.BatchNumber.Split('-');
+        var year = parts.Length > 1 ? parts[1] : DateTime.UtcNow.Year.ToString();
+        var batchSeq = parts.Length > 2 ? parts[2] : "001";
+        return $"TS-{year}-{batchSeq}-{itemSeq:D2}";
     }
 }

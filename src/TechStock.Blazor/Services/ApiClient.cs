@@ -32,7 +32,7 @@ public class ApiClient
     {
         await SetAuthHeaderAsync();
         var response = await _http.PostAsJsonAsync(url, body);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException(await ReadErrorAsync(response));
         return await response.Content.ReadFromJsonAsync<T>();
     }
 
@@ -40,14 +40,14 @@ public class ApiClient
     {
         await SetAuthHeaderAsync();
         var response = await _http.PostAsJsonAsync(url, body);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException(await ReadErrorAsync(response));
     }
 
     public async Task<T?> PutAsync<T>(string url, object body)
     {
         await SetAuthHeaderAsync();
         var response = await _http.PutAsJsonAsync(url, body);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException(await ReadErrorAsync(response));
         return await response.Content.ReadFromJsonAsync<T>();
     }
 
@@ -55,14 +55,32 @@ public class ApiClient
     {
         await SetAuthHeaderAsync();
         var response = await _http.PutAsJsonAsync(url, body);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException(await ReadErrorAsync(response));
     }
 
     public async Task DeleteAsync(string url)
     {
         await SetAuthHeaderAsync();
         var response = await _http.DeleteAsync(url);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException(await ReadErrorAsync(response));
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { } e)
+                    return e;
+                if (doc.RootElement.TryGetProperty("message", out var msg) && msg.GetString() is { } m)
+                    return m;
+            }
+        }
+        catch { }
+        return $"{(int)response.StatusCode} {response.ReasonPhrase}";
     }
 
     public async Task<byte[]> GetBytesAsync(string url)

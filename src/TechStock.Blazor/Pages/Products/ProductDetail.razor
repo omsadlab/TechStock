@@ -1,0 +1,423 @@
+@page "/products/{Id:guid}"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_product == null)
+{
+    <MudAlert Severity="Severity.Error">Product not found.</MudAlert>
+    <MudButton Class="mt-2" OnClick='() => Nav.NavigateTo("/products")'>Back to Products</MudButton>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Justify="Justify.SpaceBetween">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                           OnClick='() => Nav.NavigateTo("/products")' />
+            <div>
+                <MudText Typo="Typo.h5">@_product.Name</MudText>
+                @if (!string.IsNullOrEmpty(_product.Model))
+                {
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@_product.Model</MudText>
+                }
+            </div>
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(_product.IsActive ? Color.Success : Color.Default)">
+                @(_product.IsActive ? "Active" : "Inactive")
+            </MudChip>
+        </MudStack>
+        <AuthorizeView Roles="Admin,Manager">
+            <Authorized>
+                <MudStack Row="true">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
+                               OnClick='() => Nav.NavigateTo($"/products/{Id}/edit")'>
+                        Edit
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.Delete"
+                               OnClick="ConfirmDeleteAsync">
+                        Delete
+                    </MudButton>
+                </MudStack>
+            </Authorized>
+        </AuthorizeView>
+    </MudStack>
+
+    <MudGrid>
+        @* Overview card *@
+        <MudItem xs="12" md="5">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Overview</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Hover="false">
+                        <tbody>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Brand</MudText></td>
+                                <td><MudText Typo="Typo.body2">@_product.BrandName</MudText></td>
+                            </tr>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Type</MudText></td>
+                                <td><MudText Typo="Typo.body2">@_product.ProductTypeName</MudText></td>
+                            </tr>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Stock</MudText></td>
+                                <td><StockBadge Stock="@_product.TotalStock" /></td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+
+                    @if (!string.IsNullOrEmpty(_product.Description))
+                    {
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Description</MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1">@_product.Description</MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        @* Specifications card *@
+        <MudItem xs="12" md="7">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Specifications</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_product.Configs.Count == 0)
+                    {
+                        <MudText Color="Color.Secondary">No specifications recorded.</MudText>
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <tbody>
+                                @foreach (var cfg in _product.Configs)
+                                {
+                                    <tr>
+                                        <td style="width:40%">
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary">@cfg.ConfigTypeName</MudText>
+                                        </td>
+                                        <td>
+                                            <MudText Typo="Typo.body2">@cfg.Value</MudText>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    @* Date range filter *@
+    <MudPaper Class="mt-4 pa-3" Elevation="0" Outlined="true">
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+            <MudText Typo="Typo.subtitle2" Class="mr-1">Date Range</MudText>
+            <MudDatePicker Label="From" @bind-Date="_from" DateFormat="yyyy-MM-dd"
+                           Clearable="true" Style="max-width:160px" />
+            <MudDatePicker Label="To" @bind-Date="_to" DateFormat="yyyy-MM-dd"
+                           Clearable="true" Style="max-width:160px" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.FilterAlt"
+                       OnClick="ApplyFilterAsync">Apply</MudButton>
+            @if (_from.HasValue || _to.HasValue)
+            {
+                <MudButton Variant="Variant.Text" OnClick="ClearFilterAsync">Clear</MudButton>
+            }
+        </MudStack>
+    </MudPaper>
+
+    @* Tabs: Batches / Sales History *@
+    <MudTabs Class="mt-4" Elevation="2" Rounded="true" Border="true" ApplyEffectsToContainer="true">
+
+        @* ── Batches tab ── *@
+        <MudTabPanel Text="Batches" Icon="@Icons.Material.Filled.Inventory2">
+            @if (_batchesLoading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_batches.Count == 0)
+            {
+                <MudText Color="Color.Secondary" Class="pa-4">No batch records found.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true" Style="overflow-x:auto">
+                    <thead>
+                        <tr>
+                            <th>Batch No</th>
+                            <th>Purchase Date</th>
+                            @if (_includeCost)
+                            {
+                                <th>Cost/JPY</th>
+                                <th>Cost/LKR</th>
+                            }
+                            <th>Selling Price</th>
+                            <th>Purchased</th>
+                            <th>Sold</th>
+                            <th>Warranty</th>
+                            <th>Remaining</th>
+                            @if (_includeCost)
+                            {
+                                <th>Cost Total</th>
+                            }
+                            <th>Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var b in _batches)
+                        {
+                            <tr>
+                                <td>
+                                    <MudLink Href="@($"/batches/{b.BatchId}")" Typo="Typo.body2">
+                                        @b.BatchNumber
+                                    </MudLink>
+                                </td>
+                                <td><MudText Typo="Typo.body2">@b.PurchaseDate.ToString("yyyy-MM-dd")</MudText></td>
+                                @if (_includeCost)
+                                {
+                                    <td><MudText Typo="Typo.body2">@(b.UnitCostJPY?.ToString("N2") ?? "—")</MudText></td>
+                                    <td><MudText Typo="Typo.body2">@(b.UnitCostLKR?.ToString("N2") ?? "—")</MudText></td>
+                                }
+                                <td><MudText Typo="Typo.body2">@b.SellingPriceLKR.ToString("N2")</MudText></td>
+                                <td><MudText Typo="Typo.body2">@b.PurchasedQty</MudText></td>
+                                <td><MudText Typo="Typo.body2">@b.SoldQty</MudText></td>
+                                <td>
+                                    @if (b.ClaimedQty > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">@b.ClaimedQty</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                                    }
+                                </td>
+                                <td><StockBadge Stock="@b.RemainingQty" /></td>
+                                @if (_includeCost)
+                                {
+                                    <td><MudText Typo="Typo.body2">@(b.CostTotal?.ToString("N2") ?? "—")</MudText></td>
+                                }
+                                <td><MudText Typo="Typo.body2">@b.SoldAmount.ToString("N2")</MudText></td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight:600">
+                            <td colspan="@(_includeCost ? 4 : 2)"><MudText Typo="Typo.body2"><b>Total</b></MudText></td>
+                            <td></td>
+                            <td><MudText Typo="Typo.body2"><b>@_batches.Sum(b => b.PurchasedQty)</b></MudText></td>
+                            <td><MudText Typo="Typo.body2"><b>@_batches.Sum(b => b.SoldQty)</b></MudText></td>
+                            <td><MudText Typo="Typo.body2"><b>@_batches.Sum(b => b.ClaimedQty)</b></MudText></td>
+                            <td><MudText Typo="Typo.body2"><b>@_batches.Sum(b => b.RemainingQty)</b></MudText></td>
+                            @if (_includeCost)
+                            {
+                                <td><MudText Typo="Typo.body2"><b>@(_batches.Sum(b => b.CostTotal ?? 0).ToString("N2"))</b></MudText></td>
+                            }
+                            <td><MudText Typo="Typo.body2"><b>@_batches.Sum(b => b.SoldAmount).ToString("N2")</b></MudText></td>
+                        </tr>
+                    </tfoot>
+                </MudSimpleTable>
+            }
+        </MudTabPanel>
+
+        @* ── Sales History tab ── *@
+        <MudTabPanel Text="Sales History" Icon="@Icons.Material.Filled.ReceiptLong">
+            @if (_salesLoading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_sales.Count == 0)
+            {
+                <MudText Color="Color.Secondary" Class="pa-4">No sales records found for this period.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr>
+                            <th>Invoice No</th>
+                            <th>Sale Date</th>
+                            <th>Qty</th>
+                            <th>Amount (LKR)</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _sales)
+                        {
+                            <tr>
+                                <td><MudText Typo="Typo.body2">@s.InvoiceNumber</MudText></td>
+                                <td><MudText Typo="Typo.body2">@s.SaleDate.ToString("yyyy-MM-dd")</MudText></td>
+                                <td><MudText Typo="Typo.body2">@s.Quantity</MudText></td>
+                                <td><MudText Typo="Typo.body2">@s.LineTotal.ToString("N2")</MudText></td>
+                                <td>
+                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                   Size="Size.Small" Title="View Invoice"
+                                                   OnClick='() => Nav.NavigateTo($"/sales/{s.SaleId}")' />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="2"><MudText Typo="Typo.body2"><b>Total</b></MudText></td>
+                            <td><MudText Typo="Typo.body2"><b>@_sales.Sum(s => s.Quantity)</b></MudText></td>
+                            <td><MudText Typo="Typo.body2"><b>@_sales.Sum(s => s.LineTotal).ToString("N2")</b></MudText></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </MudSimpleTable>
+            }
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private ProductDetailDto? _product;
+    private bool _loading = true;
+    private bool _includeCost;
+
+    private DateTime? _from;
+    private DateTime? _to;
+
+    private List<ProductBatchSummaryDto> _batches = [];
+    private bool _batchesLoading;
+    private List<ProductSaleLineDto> _sales = [];
+    private bool _salesLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _includeCost = authState.User.IsInRole("Admin") || authState.User.IsInRole("Manager");
+
+        try
+        {
+            _product = await Api.GetAsync<ProductDetailDto>($"api/products/{Id}");
+        }
+        finally { _loading = false; }
+
+        await LoadTabDataAsync();
+    }
+
+    private async Task LoadTabDataAsync()
+    {
+        await Task.WhenAll(LoadBatchesAsync(), LoadSalesAsync());
+    }
+
+    private async Task LoadBatchesAsync()
+    {
+        _batchesLoading = true;
+        StateHasChanged();
+        try
+        {
+            _batches = await Api.GetAsync<List<ProductBatchSummaryDto>>(BuildUrl($"api/products/{Id}/batches")) ?? [];
+        }
+        finally { _batchesLoading = false; StateHasChanged(); }
+    }
+
+    private async Task LoadSalesAsync()
+    {
+        _salesLoading = true;
+        StateHasChanged();
+        try
+        {
+            _sales = await Api.GetAsync<List<ProductSaleLineDto>>(BuildUrl($"api/products/{Id}/sales")) ?? [];
+        }
+        finally { _salesLoading = false; StateHasChanged(); }
+    }
+
+    private string BuildUrl(string baseUrl)
+    {
+        var qs = new System.Text.StringBuilder();
+        if (_from.HasValue) qs.Append($"from={_from.Value:yyyy-MM-dd}&");
+        if (_to.HasValue) qs.Append($"to={_to.Value:yyyy-MM-dd}&");
+        return qs.Length > 0 ? $"{baseUrl}?{qs.ToString().TrimEnd('&')}" : baseUrl;
+    }
+
+    private async Task ApplyFilterAsync() => await LoadTabDataAsync();
+
+    private async Task ClearFilterAsync()
+    {
+        _from = null;
+        _to = null;
+        await LoadTabDataAsync();
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Product",
+            "This will deactivate the product. It will no longer appear in inventory.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirm != true) return;
+        try
+        {
+            await Api.DeleteAsync($"api/products/{Id}");
+            Snackbar.Add("Product deleted.", Severity.Success);
+            Nav.NavigateTo("/products");
+        }
+        catch { Snackbar.Add("Failed to delete product.", Severity.Error); }
+    }
+
+    private class ProductDetailDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Model { get; set; }
+        public Guid BrandId { get; set; }
+        public string BrandName { get; set; } = string.Empty;
+        public Guid ProductTypeId { get; set; }
+        public string ProductTypeName { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public bool IsActive { get; set; }
+        public int TotalStock { get; set; }
+        public decimal? SellingPriceLKR { get; set; }
+        public decimal? UnitCostLKR { get; set; }
+        public decimal? UnitCostJPY { get; set; }
+        public List<ConfigItem> Configs { get; set; } = [];
+    }
+
+    private record ConfigItem(Guid ConfigTypeId, string ConfigTypeName, string Value);
+
+    private class ProductBatchSummaryDto
+    {
+        public Guid BatchItemId { get; set; }
+        public Guid BatchId { get; set; }
+        public string BatchNumber { get; set; } = string.Empty;
+        public DateTime PurchaseDate { get; set; }
+        public decimal? UnitCostJPY { get; set; }
+        public decimal? UnitCostLKR { get; set; }
+        public decimal SellingPriceLKR { get; set; }
+        public int PurchasedQty { get; set; }
+        public decimal? CostTotal { get; set; }
+        public int SoldQty { get; set; }
+        public int ClaimedQty { get; set; }
+        public int RemainingQty { get; set; }
+        public decimal SoldAmount { get; set; }
+    }
+
+    private class ProductSaleLineDto
+    {
+        public Guid SaleId { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public DateTime SaleDate { get; set; }
+        public int Quantity { get; set; }
+        public decimal LineTotal { get; set; }
+    }
+}

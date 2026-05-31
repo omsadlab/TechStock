@@ -2,6 +2,8 @@
 @attribute [Authorize]
 @inject TechStock.Blazor.Services.ApiClient Api
 @inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
 
 <MudText Typo="Typo.h4" Class="mb-4">Inventory</MudText>
 
@@ -9,17 +11,42 @@
     <MudItem xs="12" sm="6" md="4">
         <MudTextField Value="_search" Label="Search" Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search"
-                      Variant="Variant.Outlined" Immediate="true"
-                      ValueChanged="@((string v) => { _search = v; _ = LoadAsync(); })" />
+                      Variant="Variant.Outlined" Immediate="true" DebounceInterval="300"
+                      ValueChanged="@(async (string v) => { _search = v; _page = 1; await LoadAsync(); })" />
     </MudItem>
     <MudItem xs="12" sm="6" md="3">
+        <MudSelect T="Guid?" Value="_typeId" Label="Product Type" Variant="Variant.Outlined"
+                   ValueChanged="@(async (Guid? v) => { _typeId = v; _page = 1; await LoadAsync(); })">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">All Types</MudSelectItem>
+            @foreach (var t in _types)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)t.Id)">@t.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudSelect T="Guid?" Value="_brandId" Label="Brand" Variant="Variant.Outlined"
+                   ValueChanged="@(async (Guid? v) => { _brandId = v; _page = 1; await LoadAsync(); })">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">All Brands</MudSelectItem>
+            @foreach (var b in _brands)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)b.Id)">@b.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="2">
         <AuthorizeView Roles="Admin,Manager">
             <Authorized>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Add"
-                           OnClick='() => Nav.NavigateTo("/inventory/add")'>
-                    Add Product
-                </MudButton>
+                <MudStack Row="true">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick='() => Nav.NavigateTo("/products/add")'>
+                        Add Product
+                    </MudButton>
+                    <MudIconButton Icon="@Icons.Material.Filled.Download"
+                                   Title="Export to Excel"
+                                   OnClick="ExportAsync" />
+                </MudStack>
             </Authorized>
         </AuthorizeView>
     </MudItem>
@@ -35,9 +62,15 @@ else
     <MudHidden Breakpoint="Breakpoint.SmAndDown">
         <MudTable Items="_products" Hover="true" Dense="true">
             <HeaderContent>
-                <MudTh>Name</MudTh>
-                <MudTh>Brand</MudTh>
-                <MudTh>Type</MudTh>
+                <MudTh @onclick='() => SortAsync("name")' Style="cursor:pointer;user-select:none">
+                    Name <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("name")" />
+                </MudTh>
+                <MudTh @onclick='() => SortAsync("brand")' Style="cursor:pointer;user-select:none">
+                    Brand <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("brand")" />
+                </MudTh>
+                <MudTh @onclick='() => SortAsync("type")' Style="cursor:pointer;user-select:none">
+                    Type <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("type")" />
+                </MudTh>
                 <MudTh>Stock</MudTh>
                 <MudTh>Selling Price</MudTh>
                 <MudTh></MudTh>
@@ -50,12 +83,12 @@ else
                 <MudTd>@(context.SellingPriceLKR.HasValue ? $"LKR {context.SellingPriceLKR:N0}" : "—")</MudTd>
                 <MudTd>
                     <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                   OnClick='() => Nav.NavigateTo($"/inventory/{context.Id}")' />
+                                   OnClick='() => Nav.NavigateTo($"/products/{context.Id}")' />
                     @{var productId = context.Id;}
                     <AuthorizeView Roles="Admin,Manager" Context="authCtx">
                         <Authorized>
                             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                           OnClick='() => Nav.NavigateTo($"/inventory/{productId}/edit")' />
+                                           OnClick='() => Nav.NavigateTo($"/products/{productId}/edit")' />
                         </Authorized>
                     </AuthorizeView>
                 </MudTd>
@@ -67,7 +100,7 @@ else
     <MudHidden Breakpoint="Breakpoint.MdAndUp">
         @foreach (var p in _products)
         {
-            <MudCard Class="mb-2" @onclick='() => Nav.NavigateTo($"/inventory/{p.Id}")' Style="cursor:pointer;">
+            <MudCard Class="mb-2" @onclick='() => Nav.NavigateTo($"/products/{p.Id}")' Style="cursor:pointer;">
                 <MudCardContent>
                     <MudText Typo="Typo.subtitle1">@p.Name</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">@p.BrandName · @p.ProductTypeName</MudText>
@@ -85,20 +118,36 @@ else
 
 @code {
     private List<ProductDto> _products = [];
+    private List<TypeItem> _types = [];
+    private List<BrandItem> _brands = [];
     private bool _loading = true;
     private string _search = string.Empty;
+    private Guid? _typeId;
+    private Guid? _brandId;
     private int _page = 1;
     private int _totalPages = 1;
+    private string _sortBy = "name";
+    private bool _sortDesc = false;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        var t = Api.GetAsync<List<TypeItem>>("api/product-types");
+        var b = Api.GetAsync<List<BrandItem>>("api/brands");
+        await Task.WhenAll(t, b);
+        _types = t.Result ?? [];
+        _brands = b.Result ?? [];
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
         _loading = true;
         try
         {
-            var url = $"api/products?page={_page}&pageSize=20";
+            var url = $"api/products?page={_page}&pageSize=20&sortBy={_sortBy}&sortDir={(_sortDesc ? "desc" : "asc")}";
             if (!string.IsNullOrEmpty(_search)) url += $"&search={Uri.EscapeDataString(_search)}";
+            if (_typeId.HasValue) url += $"&typeId={_typeId}";
+            if (_brandId.HasValue) url += $"&brandId={_brandId}";
             var result = await Api.GetAsync<PagedResult<ProductDto>>(url);
             if (result != null) { _products = result.Items; _totalPages = result.TotalPages; }
         }
@@ -106,6 +155,28 @@ else
     }
 
     private async Task OnPageChanged(int page) { _page = page; await LoadAsync(); }
+
+    private async Task SortAsync(string col)
+    {
+        if (_sortBy == col) _sortDesc = !_sortDesc;
+        else { _sortBy = col; _sortDesc = false; }
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private string SortArrow() => _sortDesc ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward;
+    private string SortVis(string col) => _sortBy == col ? "vertical-align:middle" : "visibility:hidden";
+
+    private async Task ExportAsync()
+    {
+        try
+        {
+            var bytes = await Api.GetBytesAsync("api/export/inventory");
+            await JS.InvokeVoidAsync("downloadFile", "inventory.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
+        }
+        catch { Snackbar.Add("Export failed.", Severity.Error); }
+    }
 
     private class ProductDto
     {
@@ -117,5 +188,7 @@ else
         public decimal? SellingPriceLKR { get; set; }
     }
 
+    private record TypeItem(Guid Id, string Name, bool IsActive);
+    private record BrandItem(Guid Id, string Name, string? Country, bool IsActive);
     private class PagedResult<T> { public List<T> Items { get; set; } = []; public int TotalPages { get; set; } }
 }

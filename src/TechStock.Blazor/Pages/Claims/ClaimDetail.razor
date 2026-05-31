@@ -1,0 +1,457 @@
+@page "/claims/{Id:guid}"
+@attribute [Authorize]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_claim == null)
+{
+    <MudAlert Severity="Severity.Error">Claim not found.</MudAlert>
+    <MudButton Class="mt-2" OnClick='() => Nav.NavigateTo("/claims")'>Back</MudButton>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Justify="Justify.SpaceBetween">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                           OnClick='() => Nav.NavigateTo("/claims")' />
+            <div>
+                <MudText Typo="Typo.h5" Style="font-family:monospace">@_claim.ClaimNumber</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@_claim.ClaimedAt.ToString("dd MMM yyyy")</MudText>
+            </div>
+            <MudChip T="string" Color="@StatusColor(_claim.Status)">@_claim.Status</MudChip>
+        </MudStack>
+    </MudStack>
+
+    <MudGrid Class="mb-3">
+        @* Sale / Customer info *@
+        <MudItem xs="12" md="6">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Sale Details</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Hover="false">
+                        <tbody>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Invoice</MudText></td>
+                                <td>
+                                    <MudLink Href="@($"/sales/{_claim.SaleId}")"
+                                             Typo="Typo.body2" Style="font-family:monospace">
+                                        @_claim.InvoiceNumber
+                                    </MudLink>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Customer</MudText></td>
+                                <td><MudText Typo="Typo.body2">@(_claim.CustomerName ?? "Walk-in")</MudText></td>
+                            </tr>
+                            @if (!string.IsNullOrEmpty(_claim.CustomerPhone))
+                            {
+                                <tr>
+                                    <td><MudText Typo="Typo.body2" Color="Color.Secondary">Phone</MudText></td>
+                                    <td><MudText Typo="Typo.body2">@_claim.CustomerPhone</MudText></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        @* Item info *@
+        <MudItem xs="12" md="6">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Claimed Item</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Hover="false">
+                        <tbody>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Product</MudText></td>
+                                <td><MudText Typo="Typo.body2">@_claim.ProductName</MudText></td>
+                            </tr>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Brand</MudText></td>
+                                <td><MudText Typo="Typo.body2">@_claim.BrandName</MudText></td>
+                            </tr>
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Batch</MudText></td>
+                                <td><MudText Typo="Typo.body2" Style="font-family:monospace">@_claim.BatchNumber</MudText></td>
+                            </tr>
+                            @if (!string.IsNullOrEmpty(_claim.Barcode))
+                            {
+                                <tr>
+                                    <td><MudText Typo="Typo.body2" Color="Color.Secondary">Barcode</MudText></td>
+                                    <td><MudText Typo="Typo.body2" Style="font-family:monospace">@_claim.Barcode</MudText></td>
+                                </tr>
+                            }
+                            @if (_claim.WarrantyMonths.HasValue)
+                            {
+                                <tr>
+                                    <td><MudText Typo="Typo.body2" Color="Color.Secondary">Warranty</MudText></td>
+                                    <td><MudText Typo="Typo.body2">@_claim.WarrantyMonths mo.</MudText></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    @* Claim Details *@
+    <MudCard Class="mb-3">
+        <MudCardHeader>
+            <CardHeaderContent><MudText Typo="Typo.h6">Claim Details</MudText></CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Type</MudText>
+                    <MudText Typo="Typo.body1">
+                        @(_claim.ClaimType == "SubComponent" ? "Sub-Component" : "Whole Item")
+                    </MudText>
+                </MudItem>
+                @if (!string.IsNullOrEmpty(_claim.ComponentName))
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Component</MudText>
+                        <MudText Typo="Typo.body1">@_claim.ComponentName</MudText>
+                    </MudItem>
+                }
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Issue Description</MudText>
+                    <MudText Typo="Typo.body1">@_claim.IssueDescription</MudText>
+                </MudItem>
+                @if (_claim.ResolvedAt.HasValue)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Resolved On</MudText>
+                        <MudText Typo="Typo.body1">@_claim.ResolvedAt.Value.ToString("dd MMM yyyy")</MudText>
+                    </MudItem>
+                }
+                @if (!string.IsNullOrEmpty(_claim.ResolutionNotes))
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Resolution Notes</MudText>
+                        <MudText Typo="Typo.body1">@_claim.ResolutionNotes</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudCardContent>
+    </MudCard>
+
+    @* Replacement Item (if already resolved with a replacement) *@
+    @if (_claim.StockDeducted && _claim.ReplacementBatchItemId.HasValue)
+    {
+        <MudCard Class="mb-3" Style="border: 1px solid var(--mud-palette-success)">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                        <MudText Typo="Typo.h6">Replacement Given</MudText>
+                    </MudStack>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudSimpleTable Dense="true" Hover="false">
+                    <tbody>
+                        <tr>
+                            <td><MudText Typo="Typo.body2" Color="Color.Secondary">Product</MudText></td>
+                            <td><MudText Typo="Typo.body2">@_claim.ReplacementProductName (@_claim.ReplacementBrandName)</MudText></td>
+                        </tr>
+                        <tr>
+                            <td><MudText Typo="Typo.body2" Color="Color.Secondary">Batch</MudText></td>
+                            <td><MudText Typo="Typo.body2" Style="font-family:monospace">@_claim.ReplacementBatchNumber</MudText></td>
+                        </tr>
+                        @if (!string.IsNullOrEmpty(_claim.ReplacementBarcode))
+                        {
+                            <tr>
+                                <td><MudText Typo="Typo.body2" Color="Color.Secondary">Barcode</MudText></td>
+                                <td><MudText Typo="Typo.body2" Style="font-family:monospace">@_claim.ReplacementBarcode</MudText></td>
+                            </tr>
+                        }
+                        <tr>
+                            <td><MudText Typo="Typo.body2" Color="Color.Secondary">Cost (LKR)</MudText></td>
+                            <td><MudText Typo="Typo.body2">LKR @_claim.ReplacementCostLKR?.ToString("N2")</MudText></td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @* Status Update *@
+    <MudCard>
+        <MudCardHeader>
+            <CardHeaderContent><MudText Typo="Typo.h6">Update Status</MudText></CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="string" Value="_newStatus" Label="Status" Variant="Variant.Outlined"
+                               ValueChanged="OnStatusChanged">
+                        <MudSelectItem T="string" Value='"Pending"'>Pending</MudSelectItem>
+                        <MudSelectItem T="string" Value='"InReview"'>In Review</MudSelectItem>
+                        <MudSelectItem T="string" Value='"Resolved"'>Resolved</MudSelectItem>
+                        <MudSelectItem T="string" Value='"Rejected"'>Rejected</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_resolutionNotes" Label="Resolution Notes (optional)"
+                                  Variant="Variant.Outlined" Lines="2" />
+                </MudItem>
+
+                @* Replacement item picker — shown when Resolved and stock not yet deducted *@
+                @if (_newStatus == "Resolved" && !_claim.StockDeducted)
+                {
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Inventory" Size="Size.Small" Class="mr-1" />
+                            Replacement Item from Inventory
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">
+                            Select which stock item is being given as replacement. Stock will be decremented by 1.
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="8">
+                        <MudTextField @bind-Value="_replacementSearch" Label="Search by product, barcode or batch"
+                                      Variant="Variant.Outlined"
+                                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                                      OnAdornmentClick="SearchReplacementAsync"
+                                      OnKeyDown="OnReplacementKeyDown" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4" Class="d-flex align-end">
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" FullWidth="true"
+                                   OnClick="SearchReplacementAsync" Disabled="_searchingReplacement">
+                            @(_searchingReplacement ? "Searching..." : "Search Stock")
+                        </MudButton>
+                    </MudItem>
+
+                    @if (_replacementCandidates.Count > 0)
+                    {
+                        <MudItem xs="12">
+                            <MudSimpleTable Dense="true" Class="mt-1">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Barcode</th>
+                                        <th>Batch</th>
+                                        <th>In Stock</th>
+                                        <th>Cost (LKR)</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var c in _replacementCandidates)
+                                    {
+                                        var isSelected = _selectedReplacement?.BatchItemId == c.BatchItemId;
+                                        <tr style="@(isSelected ? "background:#e8f5e9" : "")">
+                                            <td>
+                                                <MudText Typo="Typo.body2">@c.ProductName</MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@c.BrandName</MudText>
+                                            </td>
+                                            <td style="font-family:monospace">@(c.Barcode ?? "—")</td>
+                                            <td style="font-family:monospace">@c.BatchNumber</td>
+                                            <td>
+                                                <MudChip T="string" Size="Size.Small"
+                                                         Color="@(c.RemainingQty <= 2 ? Color.Warning : Color.Success)">
+                                                    @c.RemainingQty
+                                                </MudChip>
+                                            </td>
+                                            <td>LKR @c.UnitCostLKR.ToString("N2")</td>
+                                            <td>
+                                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                           Color="@(isSelected ? Color.Success : Color.Default)"
+                                                           OnClick='() => SelectReplacement(c)'>
+                                                    @(isSelected ? "Selected" : "Select")
+                                                </MudButton>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                    }
+                    else if (_replacementSearchDone && _replacementCandidates.Count == 0)
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info" Dense="true">No matching stock items found.</MudAlert>
+                        </MudItem>
+                    }
+
+                    @if (_selectedReplacement != null)
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Success" Dense="true" Icon="@Icons.Material.Filled.CheckCircle">
+                                Replacement selected: <strong>@_selectedReplacement.ProductName</strong>
+                                (@_selectedReplacement.BrandName) — Batch @_selectedReplacement.BatchNumber
+                                — Cost LKR @_selectedReplacement.UnitCostLKR.ToString("N2")
+                            </MudAlert>
+                        </MudItem>
+                    }
+                }
+
+                <MudItem xs="12">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="UpdateStatusAsync" Disabled="_updating">
+                        @(_updating ? "Updating..." : "Update")
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private ClaimDto? _claim;
+    private bool _loading = true;
+    private string _newStatus = "Pending";
+    private string? _resolutionNotes;
+    private bool _updating;
+
+    private string _replacementSearch = string.Empty;
+    private bool _searchingReplacement;
+    private bool _replacementSearchDone;
+    private List<ReplacementCandidateDto> _replacementCandidates = [];
+    private ReplacementCandidateDto? _selectedReplacement;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _claim = await Api.GetAsync<ClaimDto>($"api/claims/{Id}");
+            if (_claim != null)
+            {
+                _newStatus = _claim.Status;
+                _resolutionNotes = _claim.ResolutionNotes;
+            }
+        }
+        finally { _loading = false; }
+    }
+
+    private void OnStatusChanged(string newStatus)
+    {
+        _newStatus = newStatus;
+        if (newStatus != "Resolved")
+        {
+            _replacementCandidates = [];
+            _selectedReplacement = null;
+            _replacementSearchDone = false;
+        }
+    }
+
+    private async Task OnReplacementKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SearchReplacementAsync();
+    }
+
+    private async Task SearchReplacementAsync()
+    {
+        _searchingReplacement = true;
+        _replacementSearchDone = false;
+        _replacementCandidates = [];
+        _selectedReplacement = null;
+        try
+        {
+            var url = $"api/claims/replacement-candidates?search={Uri.EscapeDataString(_replacementSearch.Trim())}";
+            _replacementCandidates = await Api.GetAsync<List<ReplacementCandidateDto>>(url) ?? [];
+        }
+        catch { _replacementCandidates = []; }
+        finally { _searchingReplacement = false; _replacementSearchDone = true; }
+    }
+
+    private void SelectReplacement(ReplacementCandidateDto candidate)
+    {
+        _selectedReplacement = _selectedReplacement?.BatchItemId == candidate.BatchItemId ? null : candidate;
+    }
+
+    private async Task UpdateStatusAsync()
+    {
+        if (_newStatus == "Resolved" && !(_claim?.StockDeducted ?? false) && _selectedReplacement == null)
+        {
+            var confirmed = true; // allow resolving without replacement if user intentionally leaves it empty
+            // warn but don't block — some resolutions may not involve stock (e.g. repaired in-house)
+            Snackbar.Add("No replacement item selected. Resolving without stock deduction.", Severity.Warning);
+        }
+
+        _updating = true;
+        try
+        {
+            _claim = await Api.PutAsync<ClaimDto>($"api/claims/{Id}/status", new
+            {
+                Status = _newStatus,
+                ResolutionNotes = _resolutionNotes,
+                ReplacementBatchItemId = _selectedReplacement?.BatchItemId
+            });
+            _selectedReplacement = null;
+            _replacementCandidates = [];
+            _replacementSearchDone = false;
+            Snackbar.Add("Status updated.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+        finally { _updating = false; }
+    }
+
+    private static Color StatusColor(string status) => status switch
+    {
+        "Pending" => Color.Warning,
+        "InReview" => Color.Info,
+        "Resolved" => Color.Success,
+        "Rejected" => Color.Error,
+        _ => Color.Default,
+    };
+
+    private class ClaimDto
+    {
+        public Guid Id { get; set; }
+        public string ClaimNumber { get; set; } = string.Empty;
+        public DateTime ClaimedAt { get; set; }
+        public Guid SaleId { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public string? CustomerName { get; set; }
+        public string? CustomerPhone { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string? Barcode { get; set; }
+        public string BatchNumber { get; set; } = string.Empty;
+        public int? WarrantyMonths { get; set; }
+        public string ClaimType { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? ComponentName { get; set; }
+        public string IssueDescription { get; set; } = string.Empty;
+        public DateTime? ResolvedAt { get; set; }
+        public string? ResolutionNotes { get; set; }
+        public Guid? ReplacementBatchItemId { get; set; }
+        public string? ReplacementProductName { get; set; }
+        public string? ReplacementBrandName { get; set; }
+        public string? ReplacementBarcode { get; set; }
+        public string? ReplacementBatchNumber { get; set; }
+        public decimal? ReplacementCostLKR { get; set; }
+        public bool StockDeducted { get; set; }
+    }
+
+    private class ReplacementCandidateDto
+    {
+        public Guid BatchItemId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string? Barcode { get; set; }
+        public string BatchNumber { get; set; } = string.Empty;
+        public int RemainingQty { get; set; }
+        public decimal UnitCostLKR { get; set; }
+        public decimal SellingPriceLKR { get; set; }
+    }
+}

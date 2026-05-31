@@ -75,6 +75,7 @@ public static class ServiceExtensions
         services.AddScoped<IExcelImportService, ExcelImportService>();
         services.AddScoped<IInvoicePdfService, InvoicePdfService>();
         services.AddScoped<IReportPdfService, ReportPdfService>();
+        services.AddScoped<IWarrantyClaimService, WarrantyClaimService>();
 
         return services;
     }

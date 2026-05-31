@@ -2,15 +2,18 @@
 
 <MudNavMenu>
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/products" Icon="@Icons.Material.Filled.Inventory2">Products</MudNavLink>
     <MudNavLink Href="/inventory" Icon="@Icons.Material.Filled.Inventory">Inventory</MudNavLink>
 
     <AuthorizeView Roles="Admin,Manager">
         <Authorized>
             <MudNavLink Href="/batches" Icon="@Icons.Material.Filled.Inbox">Batches</MudNavLink>
+            <MudNavLink Href="/barcodes/print" Icon="@Icons.Material.Filled.QrCode2">Barcode Print</MudNavLink>
         </Authorized>
     </AuthorizeView>
 
     <MudNavLink Href="/sales" Icon="@Icons.Material.Filled.ShoppingCart">Sales</MudNavLink>
+    <MudNavLink Href="/claims" Icon="@Icons.Material.Filled.AssignmentReturn">Claims</MudNavLink>
 
     <AuthorizeView Roles="Admin,Manager">
         <Authorized>
@@ -21,6 +24,7 @@
     <AuthorizeView Roles="Admin">
         <Authorized>
             <MudNavLink Href="/users" Icon="@Icons.Material.Filled.People">Users</MudNavLink>
+            <MudNavLink Href="/settings/product-types" Icon="@Icons.Material.Filled.Tune">Product Types</MudNavLink>
             <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
         </Authorized>
     </AuthorizeView>

@@ -65,6 +65,8 @@ public class ProductQueryParams
     public bool? LowStock { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 20;
+    public string SortBy { get; set; } = "name";
+    public string SortDir { get; set; } = "asc";
 }
 
 public class PagedResult<T>
@@ -74,4 +76,30 @@ public class PagedResult<T>
     public int Page { get; set; }
     public int PageSize { get; set; }
     public int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
+}
+
+public class ProductBatchSummaryDto
+{
+    public Guid BatchItemId { get; set; }
+    public Guid BatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public DateTime PurchaseDate { get; set; }
+    public decimal? UnitCostJPY { get; set; }
+    public decimal? UnitCostLKR { get; set; }
+    public decimal SellingPriceLKR { get; set; }
+    public int PurchasedQty { get; set; }
+    public decimal? CostTotal { get; set; }
+    public int SoldQty { get; set; }
+    public int ClaimedQty { get; set; }
+    public int RemainingQty { get; set; }
+    public decimal SoldAmount { get; set; }
+}
+
+public class ProductSaleLineDto
+{
+    public Guid SaleId { get; set; }
+    public string InvoiceNumber { get; set; } = string.Empty;
+    public DateTime SaleDate { get; set; }
+    public int Quantity { get; set; }
+    public decimal LineTotal { get; set; }
 }

@@ -1,3 +1,4 @@
+using ClosedXML.Excel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TechStock.Application.Interfaces;
@@ -13,16 +14,18 @@ public class ExportController : ControllerBase
     private readonly IReportPdfService _pdf;
     private readonly IReportService _reports;
     private readonly ISettingsService _settings;
+    private readonly IWarrantyClaimService _claims;
 
     private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     public ExportController(IExcelExportService excel, IReportPdfService pdf,
-        IReportService reports, ISettingsService settings)
+        IReportService reports, ISettingsService settings, IWarrantyClaimService claims)
     {
         _excel = excel;
         _pdf = pdf;
         _reports = reports;
         _settings = settings;
+        _claims = claims;
     }
 
     [HttpGet("products")]
@@ -69,6 +72,65 @@ public class ExportController : ControllerBase
         var shop = await GetShopSettingsAsync();
         var pdf = _pdf.GenerateStockReport(stock, shop);
         return File(pdf, "application/pdf", "stock_report.pdf");
+    }
+
+    [HttpGet("claims")]
+    [Authorize(Policy = "AllRoles")]
+    public async Task<IActionResult> Claims([FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        [FromQuery] Guid? batchId, [FromQuery] Guid? batchItemId,
+        [FromQuery] string? batchNumber = null, [FromQuery] string? barcode = null)
+    {
+        var items = await _claims.GetReportAsync(from, to, batchId, batchItemId, batchNumber, barcode);
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Warranty Claims");
+
+        var headers = new[] {
+            "Claim#", "Date", "Invoice#", "Customer", "Phone",
+            "Product", "Brand", "Barcode", "Batch", "Warranty (mo.)",
+            "Type", "Component", "Status", "Resolved Date", "Notes",
+            "Replacement Product", "Replacement Brand", "Replacement Barcode", "Replacement Batch", "Replacement Cost (LKR)"
+        };
+        for (int c = 0; c < headers.Length; c++)
+        {
+            ws.Cell(1, c + 1).Value = headers[c];
+            ws.Cell(1, c + 1).Style.Font.Bold = true;
+            ws.Cell(1, c + 1).Style.Fill.BackgroundColor = XLColor.LightGray;
+        }
+
+        int row = 2;
+        foreach (var item in items)
+        {
+            ws.Cell(row, 1).Value = item.ClaimNumber;
+            ws.Cell(row, 2).Value = item.ClaimedAt.ToString("yyyy-MM-dd");
+            ws.Cell(row, 3).Value = item.InvoiceNumber;
+            ws.Cell(row, 4).Value = item.CustomerName ?? "Walk-in";
+            ws.Cell(row, 5).Value = item.CustomerPhone ?? "";
+            ws.Cell(row, 6).Value = item.ProductName;
+            ws.Cell(row, 7).Value = item.BrandName;
+            ws.Cell(row, 8).Value = item.Barcode ?? "";
+            ws.Cell(row, 9).Value = item.BatchNumber;
+            ws.Cell(row, 10).Value = item.WarrantyMonths.HasValue ? item.WarrantyMonths.Value.ToString() : "—";
+            ws.Cell(row, 11).Value = item.ClaimType;
+            ws.Cell(row, 12).Value = item.ComponentName ?? "";
+            ws.Cell(row, 13).Value = item.Status;
+            ws.Cell(row, 14).Value = item.ResolvedAt.HasValue ? item.ResolvedAt.Value.ToString("yyyy-MM-dd") : "";
+            ws.Cell(row, 15).Value = item.ResolutionNotes ?? "";
+            ws.Cell(row, 16).Value = item.ReplacementProductName ?? "";
+            ws.Cell(row, 17).Value = item.ReplacementBrandName ?? "";
+            ws.Cell(row, 18).Value = item.ReplacementBarcode ?? "";
+            ws.Cell(row, 19).Value = item.ReplacementBatchNumber ?? "";
+            if (item.ReplacementCostLKR.HasValue)
+            {
+                ws.Cell(row, 20).Value = item.ReplacementCostLKR.Value;
+                ws.Cell(row, 20).Style.NumberFormat.Format = "#,##0.00";
+            }
+            row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return File(ms.ToArray(), XlsxMime, $"warranty_claims_{DateTime.UtcNow:yyyyMMdd}.xlsx");
     }
 
     private async Task<Application.DTOs.Reports.ShopSettingsDto> GetShopSettingsAsync()

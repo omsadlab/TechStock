@@ -12,10 +12,37 @@ else
         <MudCardContent>
             @foreach (var setting in _settings)
             {
+                @if (setting.Key == "PrintPaperSize" && _currentPrintMode != "DirectPrint")
+                {
+                    @* Hide paper size when not using direct print *@
+                    continue;
+                }
+
                 <MudGrid AlignItems="AlignItems.Center" Class="mb-2">
                     <MudItem xs="4"><MudText Typo="Typo.body1"><strong>@setting.Key</strong></MudText></MudItem>
                     <MudItem xs="6">
-                        <MudTextField @bind-Value="setting.Value" Variant="Variant.Outlined" Dense="true" />
+                        @if (setting.Key == "PrintMode")
+                        {
+                            <MudSelect T="string" Value="@setting.Value"
+                                       ValueChanged="@(v => { setting.Value = v; _currentPrintMode = v; })"
+                                       Variant="Variant.Outlined" Dense="true">
+                                <MudSelectItem Value="@("PDF")">PDF — Download PDF file</MudSelectItem>
+                                <MudSelectItem Value="@("Excel")">Excel — Download Excel spreadsheet</MudSelectItem>
+                                <MudSelectItem Value="@("DirectPrint")">Direct Print — Browser print dialog</MudSelectItem>
+                            </MudSelect>
+                        }
+                        else if (setting.Key == "PrintPaperSize")
+                        {
+                            <MudSelect T="string" @bind-Value="setting.Value"
+                                       Variant="Variant.Outlined" Dense="true">
+                                <MudSelectItem Value="@("A4")">A4 — Standard A4 invoice</MudSelectItem>
+                                <MudSelectItem Value="@("Thermal80mm")">Thermal 80mm — Receipt / POS printer</MudSelectItem>
+                            </MudSelect>
+                        }
+                        else
+                        {
+                            <MudTextField @bind-Value="setting.Value" Variant="Variant.Outlined" Dense="true" />
+                        }
                     </MudItem>
                     <MudItem xs="2">
                         <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
@@ -32,10 +59,15 @@ else
 @code {
     private List<SettingDto> _settings = [];
     private bool _loading = true;
+    private string _currentPrintMode = "PDF";
 
     protected override async Task OnInitializedAsync()
     {
-        try { _settings = await Api.GetAsync<List<SettingDto>>("api/settings") ?? []; }
+        try
+        {
+            _settings = await Api.GetAsync<List<SettingDto>>("api/settings") ?? [];
+            _currentPrintMode = _settings.FirstOrDefault(s => s.Key == "PrintMode")?.Value ?? "PDF";
+        }
         finally { _loading = false; }
     }
 

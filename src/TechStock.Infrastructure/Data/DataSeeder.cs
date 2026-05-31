@@ -132,8 +132,12 @@ public static class DataSeeder
             ["InvoicePrefix"]      = "INV",
             ["BatchPrefix"]        = "BT",
             ["DefaultCurrency"]    = "JPY",
+            ["DefaultSellingCurrency"] = "LKR",
+            ["DefaultExchangeRate"] = "1.0",
             ["InvoiceFooterNote"]  = "Thank you for shopping with us!",
             ["WarrantyEmail"]      = "warranty@techstock.lk",
+            ["PrintMode"]          = "PDF",
+            ["PrintPaperSize"]     = "A4",
         };
 
         foreach (var (key, value) in defaults)

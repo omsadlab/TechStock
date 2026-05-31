@@ -318,6 +318,10 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.Property<DateTime>("PurchaseDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("SellingCurrency")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Supplier")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -342,6 +346,9 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Barcode")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("BatchId")
                         .HasColumnType("uniqueidentifier");
@@ -380,6 +387,38 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("BatchItems");
+                });
+
+            modelBuilder.Entity("TechStock.Domain.Entities.BatchItemWarrantyOption", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BatchItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("SellingPriceLKR")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("WarrantyMonths")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchItemId");
+
+                    b.ToTable("BatchItemWarrantyOptions");
                 });
 
             modelBuilder.Entity("TechStock.Domain.Entities.Brand", b =>
@@ -626,6 +665,9 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("WarrantyMonths")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BatchItemId");
@@ -668,6 +710,75 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.HasIndex("BatchItemId");
 
                     b.ToTable("StockAdjustments");
+                });
+
+            modelBuilder.Entity("TechStock.Domain.Entities.WarrantyClaim", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClaimNumber")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("ClaimType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ClaimedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ComponentName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("IssueDescription")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ReplacementBatchItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("ReplacementCostLKR")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("ResolutionNotes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ResolvedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SaleItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("StockDeducted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClaimNumber")
+                        .IsUnique();
+
+                    b.HasIndex("ReplacementBatchItemId");
+
+                    b.HasIndex("SaleItemId");
+
+                    b.ToTable("WarrantyClaims");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -738,6 +849,17 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.Navigation("Batch");
 
                     b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("TechStock.Domain.Entities.BatchItemWarrantyOption", b =>
+                {
+                    b.HasOne("TechStock.Domain.Entities.BatchItem", "BatchItem")
+                        .WithMany("WarrantyOptions")
+                        .HasForeignKey("BatchItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BatchItem");
                 });
 
             modelBuilder.Entity("TechStock.Domain.Entities.ConfigType", b =>
@@ -819,6 +941,24 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.Navigation("BatchItem");
                 });
 
+            modelBuilder.Entity("TechStock.Domain.Entities.WarrantyClaim", b =>
+                {
+                    b.HasOne("TechStock.Domain.Entities.BatchItem", "ReplacementBatchItem")
+                        .WithMany()
+                        .HasForeignKey("ReplacementBatchItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TechStock.Domain.Entities.SaleItem", "SaleItem")
+                        .WithMany()
+                        .HasForeignKey("SaleItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ReplacementBatchItem");
+
+                    b.Navigation("SaleItem");
+                });
+
             modelBuilder.Entity("TechStock.Domain.Entities.Batch", b =>
                 {
                     b.Navigation("Items");
@@ -829,6 +969,8 @@ namespace TechStock.Infrastructure.Data.Migrations
                     b.Navigation("Adjustments");
 
                     b.Navigation("SaleItems");
+
+                    b.Navigation("WarrantyOptions");
                 });
 
             modelBuilder.Entity("TechStock.Domain.Entities.Brand", b =>

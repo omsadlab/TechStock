@@ -1,0 +1,577 @@
+@page "/reports"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudText Typo="Typo.h4" Class="mb-4">Reports</MudText>
+
+<MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true"
+         ActivePanelIndexChanged="OnTabChanged">
+
+    @* ── Tab 1: Sales Summary ── *@
+    <MudTabPanel Text="Sales Summary" Icon="@Icons.Material.Filled.BarChart">
+        <MudPaper Class="pa-4 mt-2">
+            <MudGrid AlignItems="AlignItems.End" Class="mb-3">
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker @bind-Date="_salesFrom" Label="From" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker @bind-Date="_salesTo" Label="To" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                               OnClick="LoadSalesSummaryAsync">Load</MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
+                               FullWidth="true" OnClick='async () => await DownloadAsync($"api/export/sales?from={_salesFrom:yyyy-MM-dd}&to={_salesTo:yyyy-MM-dd}", "sales.xlsx")'>
+                        Export
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_salesLoading) { <MudProgressLinear Indeterminate="true" /> }
+            else if (_summary != null)
+            {
+                <MudGrid Class="mb-4">
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Total Revenue</MudText>
+                            <MudText Typo="Typo.h6">LKR @_summary.TotalLKR.ToString("N0")</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Transactions</MudText>
+                            <MudText Typo="Typo.h6">@_summary.Lines.Sum(l => l.SaleCount)</MudText>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                <MudTable Items="_summary.Lines" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Transactions</MudTh>
+                        <MudTh>Total (LKR)</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Date.ToString("dd MMM yyyy")</MudTd>
+                        <MudTd>@context.SaleCount</MudTd>
+                        <MudTd>LKR @context.TotalLKR.ToString("N0")</MudTd>
+                    </RowTemplate>
+                    <FooterContent>
+                        <MudTd colspan="2"><strong>Total</strong></MudTd>
+                        <MudTd><strong>LKR @_summary.TotalLKR.ToString("N0")</strong></MudTd>
+                    </FooterContent>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudTabPanel>
+
+    @* ── Tab 2: Profit Report ── *@
+    <MudTabPanel Text="Profit" Icon="@Icons.Material.Filled.TrendingUp">
+        <MudPaper Class="pa-4 mt-2">
+            <MudGrid AlignItems="AlignItems.End" Class="mb-3">
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker @bind-Date="_profitFrom" Label="From" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker @bind-Date="_profitTo" Label="To" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                               OnClick="LoadProfitAsync">Load</MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
+                               FullWidth="true"
+                               OnClick='async () => await DownloadAsync($"api/export/report/profit?from={_profitFrom:yyyy-MM-dd}&to={_profitTo:yyyy-MM-dd}", "profit-report.pdf")'>
+                        PDF
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_profitLoading) { <MudProgressLinear Indeterminate="true" /> }
+            else if (_profit != null)
+            {
+                <MudGrid Class="mb-4">
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue</MudText>
+                            <MudText Typo="Typo.h6">LKR @_profit.TotalRevenueLKR.ToString("N0")</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Cost</MudText>
+                            <MudText Typo="Typo.h6">LKR @_profit.TotalCostLKR.ToString("N0")</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Gross Profit</MudText>
+                            <MudText Typo="Typo.h6" Color="Color.Success">LKR @_profit.GrossProfitLKR.ToString("N0")</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-3" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Margin</MudText>
+                            <MudText Typo="Typo.h6">@_profit.MarginPercent.ToString("N1") %</MudText>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                <MudTable Items="_profit.Lines" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Product</MudTh>
+                        <MudTh>Brand</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Qty Sold</MudTh>
+                        <MudTh>Revenue (LKR)</MudTh>
+                        <MudTh>Cost (LKR)</MudTh>
+                        <MudTh>Profit (LKR)</MudTh>
+                        <MudTh>Margin %</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.ProductName</MudTd>
+                        <MudTd>@context.BrandName</MudTd>
+                        <MudTd>@context.ProductTypeName</MudTd>
+                        <MudTd>@context.QtySold</MudTd>
+                        <MudTd>@context.RevenueLKR.ToString("N0")</MudTd>
+                        <MudTd>@context.CostLKR.ToString("N0")</MudTd>
+                        <MudTd>
+                            <MudText Color="@(context.ProfitLKR >= 0 ? Color.Success : Color.Error)">
+                                @context.ProfitLKR.ToString("N0")
+                            </MudText>
+                        </MudTd>
+                        <MudTd>@context.MarginPercent.ToString("N1") %</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudTabPanel>
+
+    @* ── Tab 3: Stock On Hand ── *@
+    <MudTabPanel Text="Stock On Hand" Icon="@Icons.Material.Filled.Inventory">
+        <MudPaper Class="pa-4 mt-2">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mb-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="LoadStockAsync">Refresh</MudButton>
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
+                               OnClick='async () => await DownloadAsync("api/export/inventory", "inventory.xlsx")'>
+                        Excel
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                               OnClick='async () => await DownloadAsync("api/export/report/stock", "stock-report.pdf")'>
+                        PDF
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+
+            @if (_stockLoading) { <MudProgressLinear Indeterminate="true" /> }
+            else if (_stock != null)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-3">
+                    Total Stock Value: <strong>LKR @_stock.TotalStockValueLKR.ToString("N0")</strong>
+                </MudAlert>
+                <MudTable Items="_stock.Lines" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Product</MudTh>
+                        <MudTh>Brand</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Batch</MudTh>
+                        <MudTh>Remaining</MudTh>
+                        <MudTh>Sell Price</MudTh>
+                        <MudTh>Stock Value</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.ProductName</MudTd>
+                        <MudTd>@context.BrandName</MudTd>
+                        <MudTd>@context.ProductTypeName</MudTd>
+                        <MudTd>@context.BatchNumber</MudTd>
+                        <MudTd><StockBadge Stock="@context.RemainingQty" /></MudTd>
+                        <MudTd>LKR @context.SellingPriceLKR.ToString("N0")</MudTd>
+                        <MudTd>LKR @context.StockValueLKR.ToString("N0")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudTabPanel>
+
+    @* ── Tab 4: Low Stock ── *@
+    <MudTabPanel Text="Low Stock" Icon="@Icons.Material.Filled.Warning">
+        <MudPaper Class="pa-4 mt-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mb-3"
+                       OnClick="LoadLowStockAsync">Refresh</MudButton>
+
+            @if (_lowStockLoading) { <MudProgressLinear Indeterminate="true" /> }
+            else if (_lowStock != null)
+            {
+                @if (_lowStock.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Success">All products are sufficiently stocked.</MudAlert>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mb-3">
+                        @_lowStock.Count product(s) are running low.
+                    </MudAlert>
+                    <MudTable Items="_lowStock" Dense="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Product</MudTh>
+                            <MudTh>Brand</MudTh>
+                            <MudTh>Stock</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.ProductName</MudTd>
+                            <MudTd>@context.BrandName</MudTd>
+                            <MudTd><StockBadge Stock="@context.TotalStock" /></MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            }
+        </MudPaper>
+    </MudTabPanel>
+
+    @* ── Tab 5: Warranty Claims ── *@
+    <MudTabPanel Text="Warranty Claims" Icon="@Icons.Material.Filled.AssignmentReturn">
+        <MudPaper Class="pa-4 mt-2">
+            <MudGrid AlignItems="AlignItems.End" Class="mb-3">
+                <MudItem xs="12" sm="3">
+                    <MudDatePicker @bind-Date="_claimsFrom" Label="From" Variant="Variant.Outlined" Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudDatePicker @bind-Date="_claimsTo" Label="To" Variant="Variant.Outlined" Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudTextField @bind-Value="_claimsBatchNumber" Label="Batch Number" Variant="Variant.Outlined"
+                                  HelperText="Optional filter" Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudTextField @bind-Value="_claimsBarcode" Label="Barcode" Variant="Variant.Outlined"
+                                  HelperText="Optional filter" Clearable="true" />
+                </MudItem>
+                <MudItem xs="6" sm="1">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                               OnClick="LoadClaimsReportAsync">Load</MudButton>
+                </MudItem>
+                <MudItem xs="6" sm="1">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
+                               FullWidth="true" OnClick="ExportClaimsAsync">Export</MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_claimsLoading) { <MudProgressLinear Indeterminate="true" /> }
+            else if (_claimsReport != null)
+            {
+                @if (_claimsReport.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No warranty claims found for the selected filters.</MudAlert>
+                }
+                else
+                {
+                    @* Summary cards *@
+                    var totalClaims = _claimsReport.Count;
+                    var resolvedWithReplacement = _claimsReport.Count(r => r.StockDeducted);
+                    var totalCost = _claimsReport.Where(r => r.ReplacementCostLKR.HasValue).Sum(r => r.ReplacementCostLKR!.Value);
+                    <MudGrid Class="mb-3">
+                        <MudItem xs="6" sm="3">
+                            <MudPaper Class="pa-3" Outlined="true">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Total Claims</MudText>
+                                <MudText Typo="Typo.h6">@totalClaims</MudText>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudPaper Class="pa-3" Outlined="true">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Replacements Given</MudText>
+                                <MudText Typo="Typo.h6">@resolvedWithReplacement</MudText>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudPaper Class="pa-3" Outlined="true">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Total Replacement Cost</MudText>
+                                <MudText Typo="Typo.h6" Color="Color.Error">LKR @totalCost.ToString("N2")</MudText>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudTable Items="_claimsReport" Dense="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Claim #</MudTh>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Invoice #</MudTh>
+                            <MudTh>Customer</MudTh>
+                            <MudTh>Product</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Replacement Item</MudTh>
+                            <MudTh>Cost (LKR)</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd><MudText Typo="Typo.body2" Style="font-family:monospace">@context.ClaimNumber</MudText></MudTd>
+                            <MudTd>@context.ClaimedAt.ToString("dd MMM yyyy")</MudTd>
+                            <MudTd><MudText Typo="Typo.body2" Style="font-family:monospace">@context.InvoiceNumber</MudText></MudTd>
+                            <MudTd>@(context.CustomerName ?? "Walk-in")</MudTd>
+                            <MudTd>
+                                <MudText Typo="Typo.body2">@context.ProductName</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.BrandName</MudText>
+                            </MudTd>
+                            <MudTd>
+                                @if (context.ClaimType == "SubComponent")
+                                {
+                                    <span>Sub: @(context.ComponentName ?? "—")</span>
+                                }
+                                else
+                                {
+                                    <span>Whole Item</span>
+                                }
+                            </MudTd>
+                            <MudTd><MudChip T="string" Size="Size.Small" Color="@ClaimStatusColor(context.Status)">@context.Status</MudChip></MudTd>
+                            <MudTd>
+                                @if (!string.IsNullOrEmpty(context.ReplacementProductName))
+                                {
+                                    <MudText Typo="Typo.body2">@context.ReplacementProductName</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Style="font-family:monospace">@context.ReplacementBatchNumber</MudText>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                                }
+                            </MudTd>
+                            <MudTd>
+                                @if (context.ReplacementCostLKR.HasValue)
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Error">LKR @context.ReplacementCostLKR.Value.ToString("N2")</MudText>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            }
+        </MudPaper>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private DateTime? _salesFrom = DateTime.Today.AddDays(-30);
+    private DateTime? _salesTo = DateTime.Today;
+    private SalesSummaryDto? _summary;
+    private bool _salesLoading;
+
+    private DateTime? _profitFrom = DateTime.Today.AddDays(-30);
+    private DateTime? _profitTo = DateTime.Today;
+    private ProfitReportDto? _profit;
+    private bool _profitLoading;
+
+    private StockOnHandDto? _stock;
+    private bool _stockLoading;
+
+    private List<LowStockItem>? _lowStock;
+    private bool _lowStockLoading;
+
+    private DateTime? _claimsFrom = DateTime.Today.AddDays(-30);
+    private DateTime? _claimsTo = DateTime.Today;
+    private string? _claimsBatchNumber;
+    private string? _claimsBarcode;
+    private List<ClaimReportItem>? _claimsReport;
+    private bool _claimsLoading;
+
+    protected override async Task OnInitializedAsync() => await LoadSalesSummaryAsync();
+
+    private async Task OnTabChanged(int index)
+    {
+        await (index switch
+        {
+            0 when _summary == null => LoadSalesSummaryAsync(),
+            1 when _profit == null => LoadProfitAsync(),
+            2 when _stock == null => LoadStockAsync(),
+            3 when _lowStock == null => LoadLowStockAsync(),
+            4 when _claimsReport == null => LoadClaimsReportAsync(),
+            _ => Task.CompletedTask
+        });
+    }
+
+    private async Task LoadSalesSummaryAsync()
+    {
+        _salesLoading = true;
+        try
+        {
+            var url = $"api/reports/sales-summary?from={_salesFrom:yyyy-MM-dd}&to={_salesTo:yyyy-MM-dd}";
+            _summary = await Api.GetAsync<SalesSummaryDto>(url);
+        }
+        catch { Snackbar.Add("Failed to load sales summary.", Severity.Error); }
+        finally { _salesLoading = false; }
+    }
+
+    private async Task LoadProfitAsync()
+    {
+        _profitLoading = true;
+        try
+        {
+            var url = $"api/reports/profit?from={_profitFrom:yyyy-MM-dd}&to={_profitTo:yyyy-MM-dd}";
+            _profit = await Api.GetAsync<ProfitReportDto>(url);
+        }
+        catch { Snackbar.Add("Failed to load profit report.", Severity.Error); }
+        finally { _profitLoading = false; }
+    }
+
+    private async Task LoadStockAsync()
+    {
+        _stockLoading = true;
+        try { _stock = await Api.GetAsync<StockOnHandDto>("api/reports/stock-on-hand"); }
+        catch { Snackbar.Add("Failed to load stock report.", Severity.Error); }
+        finally { _stockLoading = false; }
+    }
+
+    private async Task LoadLowStockAsync()
+    {
+        _lowStockLoading = true;
+        try { _lowStock = await Api.GetAsync<List<LowStockItem>>("api/reports/low-stock") ?? []; }
+        catch { Snackbar.Add("Failed to load low stock.", Severity.Error); }
+        finally { _lowStockLoading = false; }
+    }
+
+    private async Task LoadClaimsReportAsync()
+    {
+        _claimsLoading = true;
+        try
+        {
+            var qs = "api/claims?pageSize=1000";
+            if (_claimsFrom.HasValue) qs += $"&from={_claimsFrom.Value:yyyy-MM-dd}";
+            if (_claimsTo.HasValue) qs += $"&to={_claimsTo.Value:yyyy-MM-dd}";
+            if (!string.IsNullOrWhiteSpace(_claimsBatchNumber)) qs += $"&batchNumber={Uri.EscapeDataString(_claimsBatchNumber.Trim())}";
+            if (!string.IsNullOrWhiteSpace(_claimsBarcode)) qs += $"&barcode={Uri.EscapeDataString(_claimsBarcode.Trim())}";
+
+            var result = await Api.GetAsync<ClaimsPagedResult>(qs);
+            _claimsReport = result?.Items ?? [];
+        }
+        catch { Snackbar.Add("Failed to load claims report.", Severity.Error); }
+        finally { _claimsLoading = false; }
+    }
+
+    private async Task ExportClaimsAsync()
+    {
+        var qs = "api/export/claims?";
+        if (_claimsFrom.HasValue) qs += $"from={_claimsFrom.Value:yyyy-MM-dd}&";
+        if (_claimsTo.HasValue) qs += $"to={_claimsTo.Value:yyyy-MM-dd}&";
+        if (!string.IsNullOrWhiteSpace(_claimsBatchNumber)) qs += $"batchNumber={Uri.EscapeDataString(_claimsBatchNumber.Trim())}&";
+        if (!string.IsNullOrWhiteSpace(_claimsBarcode)) qs += $"barcode={Uri.EscapeDataString(_claimsBarcode.Trim())}&";
+        await DownloadAsync(qs.TrimEnd('&', '?'), "warranty-claims.xlsx");
+    }
+
+    private static Color ClaimStatusColor(string status) => status switch
+    {
+        "Pending" => Color.Warning,
+        "InReview" => Color.Info,
+        "Resolved" => Color.Success,
+        "Rejected" => Color.Error,
+        _ => Color.Default,
+    };
+
+    private async Task DownloadAsync(string url, string filename)
+    {
+        try
+        {
+            var bytes = await Api.GetBytesAsync(url);
+            var contentType = filename.EndsWith(".pdf")
+                ? "application/pdf"
+                : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            await JS.InvokeVoidAsync("downloadFile", filename, contentType, bytes);
+        }
+        catch { Snackbar.Add("Export failed.", Severity.Error); }
+    }
+
+    private class SalesSummaryDto
+    {
+        public List<SalesSummaryLine> Lines { get; set; } = [];
+        public decimal TotalLKR { get; set; }
+    }
+
+    private class SalesSummaryLine
+    {
+        public DateTime Date { get; set; }
+        public int SaleCount { get; set; }
+        public decimal TotalLKR { get; set; }
+    }
+
+    private class ProfitReportDto
+    {
+        public decimal TotalRevenueLKR { get; set; }
+        public decimal TotalCostLKR { get; set; }
+        public decimal GrossProfitLKR { get; set; }
+        public decimal MarginPercent { get; set; }
+        public List<ProfitLine> Lines { get; set; } = [];
+    }
+
+    private class ProfitLine
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string ProductTypeName { get; set; } = string.Empty;
+        public int QtySold { get; set; }
+        public decimal RevenueLKR { get; set; }
+        public decimal CostLKR { get; set; }
+        public decimal ProfitLKR { get; set; }
+        public decimal MarginPercent { get; set; }
+    }
+
+    private class StockOnHandDto
+    {
+        public List<StockLine> Lines { get; set; } = [];
+        public decimal TotalStockValueLKR { get; set; }
+    }
+
+    private class StockLine
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string ProductTypeName { get; set; } = string.Empty;
+        public string BatchNumber { get; set; } = string.Empty;
+        public int RemainingQty { get; set; }
+        public decimal SellingPriceLKR { get; set; }
+        public decimal StockValueLKR { get; set; }
+    }
+
+    private class LowStockItem
+    {
+        public Guid ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public int TotalStock { get; set; }
+    }
+
+    private class ClaimReportItem
+    {
+        public Guid Id { get; set; }
+        public string ClaimNumber { get; set; } = string.Empty;
+        public DateTime ClaimedAt { get; set; }
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public string? CustomerName { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string BrandName { get; set; } = string.Empty;
+        public string? Barcode { get; set; }
+        public string ClaimType { get; set; } = string.Empty;
+        public string? ComponentName { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public DateTime? ResolvedAt { get; set; }
+        public string? ResolutionNotes { get; set; }
+        public string? ReplacementProductName { get; set; }
+        public string? ReplacementBrandName { get; set; }
+        public string? ReplacementBatchNumber { get; set; }
+        public string? ReplacementBarcode { get; set; }
+        public decimal? ReplacementCostLKR { get; set; }
+        public bool StockDeducted { get; set; }
+    }
+
+    private class ClaimsPagedResult
+    {
+        public List<ClaimReportItem> Items { get; set; } = [];
+        public int TotalCount { get; set; }
+    }
+}

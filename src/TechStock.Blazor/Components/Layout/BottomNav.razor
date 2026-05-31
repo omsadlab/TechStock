@@ -4,10 +4,13 @@
 <MudPaper Class="fixed-bottom" Elevation="4" Style="bottom:0;left:0;right:0;z-index:1000;">
     <MudStack Row="true" Justify="Justify.SpaceAround" Class="pa-1">
         <MudIconButton Icon="@Icons.Material.Filled.Dashboard" OnClick='() => Nav.NavigateTo("/")' />
+        <MudIconButton Icon="@Icons.Material.Filled.Inventory2" OnClick='() => Nav.NavigateTo("/products")' />
         <MudIconButton Icon="@Icons.Material.Filled.Inventory" OnClick='() => Nav.NavigateTo("/inventory")' />
         <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart" OnClick='() => Nav.NavigateTo("/sales")' />
+        <MudIconButton Icon="@Icons.Material.Filled.AssignmentReturn" OnClick='() => Nav.NavigateTo("/claims")' />
         <AuthorizeView Roles="Admin,Manager">
             <MudIconButton Icon="@Icons.Material.Filled.Inbox" OnClick='() => Nav.NavigateTo("/batches")' />
+            <MudIconButton Icon="@Icons.Material.Filled.QrCode2" OnClick='() => Nav.NavigateTo("/barcodes/print")' />
         </AuthorizeView>
     </MudStack>
 </MudPaper>

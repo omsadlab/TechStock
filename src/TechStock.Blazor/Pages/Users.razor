@@ -1,48 +1,355 @@
 @page "/users"
 @attribute [Authorize(Roles = "Admin")]
 @inject TechStock.Blazor.Services.ApiClient Api
+@inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
-<MudText Typo="Typo.h4" Class="mb-4">Users</MudText>
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Justify="Justify.SpaceBetween">
+    <MudText Typo="Typo.h4">Users</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.PersonAdd"
+               OnClick="() => OpenAddDialog()">
+        Add User
+    </MudButton>
+</MudStack>
 
 @if (_loading) { <MudProgressLinear Indeterminate="true" /> }
 else
 {
     <MudTable Items="_users" Hover="true" Dense="true">
         <HeaderContent>
-            <MudTh>Name</MudTh>
-            <MudTh>Email</MudTh>
-            <MudTh>Role</MudTh>
+            <MudTh @onclick='() => SortUsers("name")' Style="cursor:pointer;user-select:none">
+                Name <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("name")" />
+            </MudTh>
+            <MudTh @onclick='() => SortUsers("email")' Style="cursor:pointer;user-select:none">
+                Email <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("email")" />
+            </MudTh>
+            <MudTh @onclick='() => SortUsers("role")' Style="cursor:pointer;user-select:none">
+                Role <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("role")" />
+            </MudTh>
             <MudTh>Status</MudTh>
+            <MudTh @onclick='() => SortUsers("joined")' Style="cursor:pointer;user-select:none">
+                Joined <MudIcon Icon="@SortArrow()" Size="Size.Small" Style="@SortVis("joined")" />
+            </MudTh>
+            <MudTh></MudTh>
         </HeaderContent>
         <RowTemplate>
+            @{var u = context;}
             <MudTd>@context.FullName</MudTd>
             <MudTd>@context.Email</MudTd>
-            <MudTd><MudChip T="string" Size="Size.Small">@context.Role</MudChip></MudTd>
             <MudTd>
-                <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                <MudChip T="string" Size="Size.Small"
+                         Color="@RoleColor(context.Role)">
+                    @context.Role
+                </MudChip>
+            </MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(context.IsActive ? Color.Success : Color.Default)">
                     @(context.IsActive ? "Active" : "Inactive")
                 </MudChip>
+            </MudTd>
+            <MudTd>@context.CreatedAt.ToString("dd MMM yyyy")</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick='() => OpenEditDialog(u)' />
+                <MudIconButton Icon="@Icons.Material.Filled.Lock" Size="Size.Small"
+                               Title="Reset password"
+                               OnClick='() => OpenPasswordDialog(u)' />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                               Color="Color.Error"
+                               OnClick='async () => await ConfirmDeleteAsync(u)' />
             </MudTd>
         </RowTemplate>
     </MudTable>
 }
 
+@* Add User Dialog *@
+<MudDialog @bind-Visible="_addOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }'>
+    <TitleContent><MudText Typo="Typo.h6">Add User</MudText></TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_form.FullName" Label="Full Name" Required="true"
+                              Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_form.Email" Label="Email" Required="true"
+                              InputType="InputType.Email" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect @bind-Value="_form.Role" Label="Role" Required="true"
+                           Variant="Variant.Outlined">
+                    <MudSelectItem T="string" Value='"Admin"'>Admin</MudSelectItem>
+                    <MudSelectItem T="string" Value='"Manager"'>Manager</MudSelectItem>
+                    <MudSelectItem T="string" Value='"Salesperson"'>Salesperson</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_form.Password" Label="Password" Required="true"
+                              InputType="InputType.Password" Variant="Variant.Outlined" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick='() => _addOpen = false'>Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveAddAsync" Disabled="_saving">
+            @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Create
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* Edit User Dialog *@
+<MudDialog @bind-Visible="_editOpen" Options='new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true }'>
+    <TitleContent><MudText Typo="Typo.h6">Edit User</MudText></TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_editForm.FullName" Label="Full Name" Required="true"
+                              Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect @bind-Value="_editForm.Role" Label="Role" Variant="Variant.Outlined">
+                    <MudSelectItem T="string" Value='"Admin"'>Admin</MudSelectItem>
+                    <MudSelectItem T="string" Value='"Manager"'>Manager</MudSelectItem>
+                    <MudSelectItem T="string" Value='"Salesperson"'>Salesperson</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSwitch @bind-Value="_editForm.IsActive" Label="Active" Color="Color.Success" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick='() => _editOpen = false'>Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SaveEditAsync" Disabled="_saving">
+            @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* Reset Password Dialog *@
+<MudDialog @bind-Visible="_pwdOpen" Options='new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true }'>
+    <TitleContent><MudText Typo="Typo.h6">Reset Password</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">@_selectedUser?.FullName</MudText>
+        <MudTextField @bind-Value="_newPassword" Label="New Password" Required="true"
+                      InputType="InputType.Password" Variant="Variant.Outlined" Class="mb-2" />
+        <MudTextField @bind-Value="_confirmPassword" Label="Confirm Password" Required="true"
+                      InputType="InputType.Password" Variant="Variant.Outlined" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick='() => _pwdOpen = false'>Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="SavePasswordAsync" Disabled="_saving">
+            Reset
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     private List<UserDto> _users = [];
     private bool _loading = true;
+    private bool _saving;
+    private string _sortBy = "name";
+    private bool _sortDesc = false;
 
-    protected override async Task OnInitializedAsync()
+    private bool _addOpen;
+    private UserForm _form = new();
+
+    private bool _editOpen;
+    private UserDto? _selectedUser;
+    private EditForm _editForm = new();
+
+    private bool _pwdOpen;
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
-        try { _users = await Api.GetAsync<List<UserDto>>("api/users") ?? []; }
+        _loading = true;
+        try
+        {
+            _users = await Api.GetAsync<List<UserDto>>("api/users") ?? [];
+            ApplySort();
+        }
         finally { _loading = false; }
     }
+
+    private void SortUsers(string col)
+    {
+        if (_sortBy == col) _sortDesc = !_sortDesc;
+        else { _sortBy = col; _sortDesc = false; }
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        _users = (_sortBy, _sortDesc) switch
+        {
+            ("email",  true)  => [.. _users.OrderByDescending(u => u.Email)],
+            ("email",  false) => [.. _users.OrderBy(u => u.Email)],
+            ("role",   true)  => [.. _users.OrderByDescending(u => u.Role)],
+            ("role",   false) => [.. _users.OrderBy(u => u.Role)],
+            ("joined", true)  => [.. _users.OrderByDescending(u => u.CreatedAt)],
+            ("joined", false) => [.. _users.OrderBy(u => u.CreatedAt)],
+            (_,        true)  => [.. _users.OrderByDescending(u => u.FullName)],
+            _                 => [.. _users.OrderBy(u => u.FullName)],
+        };
+    }
+
+    private string SortArrow() => _sortDesc ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward;
+    private string SortVis(string col) => _sortBy == col ? "vertical-align:middle" : "visibility:hidden";
+
+    private void OpenAddDialog()
+    {
+        _form = new UserForm { Role = "Salesperson" };
+        _addOpen = true;
+    }
+
+    private async Task SaveAddAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.FullName) || string.IsNullOrWhiteSpace(_form.Email) ||
+            string.IsNullOrWhiteSpace(_form.Password) || string.IsNullOrWhiteSpace(_form.Role))
+        {
+            Snackbar.Add("All fields are required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        var ok = false;
+        try
+        {
+            await Api.PostAsync<object>("api/users", new
+            {
+                FullName = _form.FullName.Trim(),
+                Email = _form.Email.Trim(),
+                Role = _form.Role,
+                Password = _form.Password
+            });
+            Snackbar.Add("User created.", Severity.Success);
+            _addOpen = false;
+            ok = true;
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+        if (ok) await LoadAsync();
+    }
+
+    private void OpenEditDialog(UserDto user)
+    {
+        _selectedUser = user;
+        _editForm = new EditForm { FullName = user.FullName, Role = user.Role, IsActive = user.IsActive };
+        _editOpen = true;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_editForm.FullName))
+        {
+            Snackbar.Add("Full name is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        var ok = false;
+        try
+        {
+            await Api.PutAsync($"api/users/{_selectedUser!.Id}", new
+            {
+                FullName = _editForm.FullName.Trim(),
+                Role = _editForm.Role,
+                IsActive = _editForm.IsActive
+            });
+            Snackbar.Add("User updated.", Severity.Success);
+            _editOpen = false;
+            ok = true;
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+        if (ok) await LoadAsync();
+    }
+
+    private void OpenPasswordDialog(UserDto user)
+    {
+        _selectedUser = user;
+        _newPassword = string.Empty;
+        _confirmPassword = string.Empty;
+        _pwdOpen = true;
+    }
+
+    private async Task SavePasswordAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newPassword))
+        {
+            Snackbar.Add("Password is required.", Severity.Warning);
+            return;
+        }
+        if (_newPassword != _confirmPassword)
+        {
+            Snackbar.Add("Passwords do not match.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await Api.PutAsync($"api/users/{_selectedUser!.Id}/reset-password",
+                new { NewPassword = _newPassword });
+            Snackbar.Add("Password reset.", Severity.Success);
+            _pwdOpen = false;
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task ConfirmDeleteAsync(UserDto user)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete User",
+            $"Delete {user.FullName}? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirm != true) return;
+        try
+        {
+            await Api.DeleteAsync($"api/users/{user.Id}");
+            Snackbar.Add("User deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"Failed: {ex.Message}", Severity.Error); }
+    }
+
+    private static Color RoleColor(string role) => role switch
+    {
+        "Admin" => Color.Error,
+        "Manager" => Color.Warning,
+        _ => Color.Info
+    };
 
     private class UserDto
     {
         public Guid Id { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    private class UserForm
+    {
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+
+    private class EditForm
+    {
+        public string FullName { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
         public bool IsActive { get; set; }
     }

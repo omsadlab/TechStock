@@ -16,11 +16,13 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<ProductConfig> ProductConfigs => Set<ProductConfig>();
     public DbSet<Batch> Batches => Set<Batch>();
     public DbSet<BatchItem> BatchItems => Set<BatchItem>();
+    public DbSet<BatchItemWarrantyOption> BatchItemWarrantyOptions => Set<BatchItemWarrantyOption>();
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SaleItem> SaleItems => Set<SaleItem>();
     public DbSet<StockAdjustment> StockAdjustments => Set<StockAdjustment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<WarrantyClaim> WarrantyClaims => Set<WarrantyClaim>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -89,8 +91,26 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             .HasOne(x => x.BatchItem).WithMany(x => x.Adjustments)
             .HasForeignKey(x => x.BatchItemId).OnDelete(DeleteBehavior.Restrict);
 
+        builder.Entity<BatchItemWarrantyOption>(e =>
+        {
+            e.Property(x => x.SellingPriceLKR).HasPrecision(18, 2);
+            e.HasOne(x => x.BatchItem).WithMany(x => x.WarrantyOptions)
+             .HasForeignKey(x => x.BatchItemId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         builder.Entity<ConfigType>()
             .HasOne(x => x.ProductType).WithMany(x => x.ConfigTypes)
             .HasForeignKey(x => x.ProductTypeId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<WarrantyClaim>(e =>
+        {
+            e.HasIndex(x => x.ClaimNumber).IsUnique();
+            e.Property(x => x.ReplacementCostLKR).HasPrecision(18, 4);
+            e.HasOne(x => x.SaleItem).WithMany()
+             .HasForeignKey(x => x.SaleItemId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ReplacementBatchItem).WithMany()
+             .HasForeignKey(x => x.ReplacementBatchItemId).OnDelete(DeleteBehavior.Restrict)
+             .IsRequired(false);
+        });
     }
 }

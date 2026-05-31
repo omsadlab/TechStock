@@ -10,6 +10,8 @@ public interface IProductService
     Task<ProductDto> CreateAsync(CreateProductRequest request);
     Task<ProductDto> UpdateAsync(Guid id, UpdateProductRequest request);
     Task DeleteAsync(Guid id);
+    Task<List<ProductBatchSummaryDto>> GetProductBatchesAsync(Guid productId, bool includeCost, DateTime? from, DateTime? to);
+    Task<List<ProductSaleLineDto>> GetProductSalesAsync(Guid productId, DateTime? from, DateTime? to, Guid? createdByUserId = null);
 }
 
 public interface IProductTypeService

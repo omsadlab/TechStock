@@ -29,8 +29,18 @@ public class ProductService : IProductService
             q = q.Where(p => p.Name.Contains(query.Search) || (p.Model != null && p.Model.Contains(query.Search)));
 
         var totalCount = await q.CountAsync();
-        var products = await q
-            .OrderBy(p => p.Name)
+        var ordered = (query.SortBy?.ToLower(), query.SortDir?.ToLower() == "desc") switch
+        {
+            ("brand", false)  => q.OrderBy(p => p.Brand.Name).ThenBy(p => p.Name),
+            ("brand", true)   => q.OrderByDescending(p => p.Brand.Name).ThenBy(p => p.Name),
+            ("type", false)   => q.OrderBy(p => p.ProductType.Name).ThenBy(p => p.Name),
+            ("type", true)    => q.OrderByDescending(p => p.ProductType.Name).ThenBy(p => p.Name),
+            ("status", false) => q.OrderBy(p => p.IsActive).ThenBy(p => p.Name),
+            ("status", true)  => q.OrderByDescending(p => p.IsActive).ThenBy(p => p.Name),
+            (_, true)         => q.OrderByDescending(p => p.Name),
+            _                 => q.OrderBy(p => p.Name),
+        };
+        var products = await ordered
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
             .ToListAsync();
@@ -163,6 +173,83 @@ public class ProductService : IProductService
         product.IsActive = false;
         product.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<List<ProductBatchSummaryDto>> GetProductBatchesAsync(Guid productId, bool includeCost, DateTime? from, DateTime? to)
+    {
+        var q = _db.BatchItems
+            .Include(bi => bi.Batch)
+            .Include(bi => bi.SaleItems)
+            .Where(bi => bi.ProductId == productId);
+
+        if (from.HasValue) q = q.Where(bi => bi.Batch.PurchaseDate >= from.Value);
+        if (to.HasValue) q = q.Where(bi => bi.Batch.PurchaseDate < to.Value.AddDays(1));
+
+        var items = await q.OrderByDescending(bi => bi.Batch.PurchaseDate).ToListAsync();
+
+        var batchItemIds = items.Select(bi => bi.Id).ToList();
+        var claimCounts = await _db.WarrantyClaims
+            .Where(c => c.ReplacementBatchItemId.HasValue &&
+                        batchItemIds.Contains(c.ReplacementBatchItemId!.Value) &&
+                        c.StockDeducted)
+            .GroupBy(c => c.ReplacementBatchItemId!.Value)
+            .Select(g => new { BatchItemId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BatchItemId, x => x.Count);
+
+        return items.Select(bi =>
+        {
+            var claimed = claimCounts.GetValueOrDefault(bi.Id, 0);
+            return new ProductBatchSummaryDto
+            {
+                BatchItemId = bi.Id,
+                BatchId = bi.BatchId,
+                BatchNumber = bi.Batch.BatchNumber,
+                PurchaseDate = bi.Batch.PurchaseDate,
+                UnitCostJPY = includeCost ? bi.UnitCostJPY : null,
+                UnitCostLKR = includeCost ? bi.UnitCostLKR : null,
+                SellingPriceLKR = bi.SellingPriceLKR,
+                PurchasedQty = bi.Quantity,
+                CostTotal = includeCost ? (decimal?)(bi.UnitCostLKR * bi.Quantity) : null,
+                SoldQty = bi.Quantity - bi.RemainingQty - claimed,
+                ClaimedQty = claimed,
+                RemainingQty = bi.RemainingQty,
+                SoldAmount = bi.SaleItems.Sum(si => si.LineTotal),
+            };
+        }).ToList();
+    }
+
+    public async Task<List<ProductSaleLineDto>> GetProductSalesAsync(Guid productId, DateTime? from, DateTime? to, Guid? createdByUserId = null)
+    {
+        var q = _db.SaleItems
+            .Where(si => si.BatchItem.ProductId == productId);
+
+        if (from.HasValue) q = q.Where(si => si.Sale.SaleDate >= from.Value);
+        if (to.HasValue) q = q.Where(si => si.Sale.SaleDate < to.Value.AddDays(1));
+        if (createdByUserId.HasValue) q = q.Where(si => si.Sale.CreatedBy == createdByUserId.Value);
+
+        var raw = await q
+            .Select(si => new
+            {
+                si.SaleId,
+                si.Sale.InvoiceNumber,
+                si.Sale.SaleDate,
+                si.Quantity,
+                si.LineTotal,
+            })
+            .ToListAsync();
+
+        return raw
+            .GroupBy(x => new { x.SaleId, x.InvoiceNumber, x.SaleDate })
+            .Select(g => new ProductSaleLineDto
+            {
+                SaleId = g.Key.SaleId,
+                InvoiceNumber = g.Key.InvoiceNumber,
+                SaleDate = g.Key.SaleDate,
+                Quantity = g.Sum(x => x.Quantity),
+                LineTotal = g.Sum(x => x.LineTotal),
+            })
+            .OrderByDescending(x => x.SaleDate)
+            .ToList();
     }
 }
 

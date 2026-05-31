@@ -1,0 +1,213 @@
+@page "/products/{Id:guid}/edit"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject TechStock.Blazor.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_notFound)
+{
+    <MudAlert Severity="Severity.Error">Product not found.</MudAlert>
+    <MudButton Class="mt-2" OnClick='() => Nav.NavigateTo("/products")'>Back</MudButton>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                       OnClick='() => Nav.NavigateTo($"/products/{Id}")' />
+        <MudText Typo="Typo.h5">Edit Product</MudText>
+    </MudStack>
+
+    <MudCard Style="max-width:720px;">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_name" Label="Product Name" Required="true"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_model" Label="Model (optional)"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudSelect @bind-Value="_brandId" Label="Brand" Required="true"
+                               Variant="Variant.Outlined">
+                        @foreach (var b in _brands)
+                        {
+                            <MudSelectItem T="Guid" Value="b.Id">@b.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="Guid" Value="_productTypeId" Label="Product Type" Required="true"
+                               Variant="Variant.Outlined"
+                               ValueChanged="@((Guid v) => _ = OnTypeChangedAsync(v))">
+                        @foreach (var t in _types)
+                        {
+                            <MudSelectItem T="Guid" Value="t.Id">@t.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_description" Label="Description (optional)"
+                                  Variant="Variant.Outlined" Lines="3" />
+                </MudItem>
+            </MudGrid>
+
+            @if (_configTypes.Count > 0)
+            {
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.h6" Class="mb-3">Specifications</MudText>
+                <MudGrid>
+                    @foreach (var ct in _configTypes)
+                    {
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Value="@GetConfigValue(ct.Id)"
+                                          ValueChanged="@((string v) => SetConfigValue(ct.Id, v))"
+                                          Label="@(ct.Name + (ct.IsRequired ? " *" : ""))"
+                                          Required="ct.IsRequired"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudCardContent>
+        <MudCardActions Class="pa-4">
+            <MudButton OnClick='() => Nav.NavigateTo($"/products/{Id}")'
+                       Variant="Variant.Text">Cancel</MudButton>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="SaveAsync" Disabled="_saving">
+                @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Save Changes
+            </MudButton>
+        </MudCardActions>
+    </MudCard>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private string _name = string.Empty;
+    private string? _model;
+    private Guid _brandId;
+    private Guid _productTypeId;
+    private string? _description;
+    private List<TypeItem> _types = [];
+    private List<BrandItem> _brands = [];
+    private List<ConfigTypeItem> _configTypes = [];
+    private Dictionary<Guid, string> _configValues = [];
+    private bool _loading = true;
+    private bool _notFound;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var typesTask = Api.GetAsync<List<TypeItem>>("api/product-types");
+        var brandsTask = Api.GetAsync<List<BrandItem>>("api/brands");
+        var productTask = Api.GetAsync<ProductDetailDto>($"api/products/{Id}");
+        await Task.WhenAll(typesTask, brandsTask, productTask);
+
+        _types = typesTask.Result ?? [];
+        _brands = brandsTask.Result ?? [];
+        var product = productTask.Result;
+
+        if (product == null) { _notFound = true; _loading = false; return; }
+
+        _name = product.Name;
+        _model = product.Model;
+        _brandId = product.BrandId;
+        _description = product.Description;
+
+        _productTypeId = product.ProductTypeId;
+        var configs = await Api.GetAsync<List<ConfigTypeItem>>($"api/product-types/{product.ProductTypeId}/config-types");
+        _configTypes = configs ?? [];
+
+        foreach (var cfg in product.Configs)
+            _configValues[cfg.ConfigTypeId] = cfg.Value;
+
+        _loading = false;
+    }
+
+    private async Task OnTypeChangedAsync(Guid typeId)
+    {
+        _productTypeId = typeId;
+        _configValues = [];
+        if (typeId == Guid.Empty) { _configTypes = []; return; }
+        var result = await Api.GetAsync<List<ConfigTypeItem>>($"api/product-types/{typeId}/config-types");
+        _configTypes = result ?? [];
+    }
+
+    private string GetConfigValue(Guid configTypeId) =>
+        _configValues.TryGetValue(configTypeId, out var v) ? v : string.Empty;
+
+    private void SetConfigValue(Guid configTypeId, string value) =>
+        _configValues[configTypeId] = value;
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_name) || _brandId == Guid.Empty || _productTypeId == Guid.Empty)
+        {
+            Snackbar.Add("Please fill in all required fields.", Severity.Warning);
+            return;
+        }
+
+        var missingRequired = _configTypes
+            .Where(ct => ct.IsRequired && string.IsNullOrWhiteSpace(GetConfigValue(ct.Id)))
+            .Select(ct => ct.Name)
+            .ToList();
+        if (missingRequired.Count > 0)
+        {
+            Snackbar.Add($"Required specs missing: {string.Join(", ", missingRequired)}", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var configs = _configValues
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                .Select(kv => new { ConfigTypeId = kv.Key, Value = kv.Value })
+                .ToList();
+
+            await Api.PutAsync($"api/products/{Id}", new
+            {
+                Name = _name.Trim(),
+                Model = string.IsNullOrWhiteSpace(_model) ? null : _model.Trim(),
+                BrandId = _brandId,
+                ProductTypeId = _productTypeId,
+                Description = string.IsNullOrWhiteSpace(_description) ? null : _description.Trim(),
+                Configs = configs
+            });
+
+            Snackbar.Add("Product updated successfully.", Severity.Success);
+            Nav.NavigateTo($"/products/{Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update product: {ex.Message}", Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+
+    private class ProductDetailDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Model { get; set; }
+        public Guid BrandId { get; set; }
+        public Guid ProductTypeId { get; set; }
+        public string? Description { get; set; }
+        public List<ConfigValueDto> Configs { get; set; } = [];
+    }
+
+    private record ConfigValueDto(Guid ConfigTypeId, string ConfigTypeName, string Value);
+    private record TypeItem(Guid Id, string Name, bool IsActive);
+    private record BrandItem(Guid Id, string Name, string? Country, bool IsActive);
+    private record ConfigTypeItem(Guid Id, string Name, Guid ProductTypeId, int DisplayOrder, bool IsRequired);
+}

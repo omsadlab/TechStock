@@ -51,6 +51,34 @@ public class SalesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = sale.Id }, sale);
     }
 
+    [HttpPut("{id:guid}"), Authorize(Policy = "AdminOrManager")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSaleRequest request)
+    {
+        await _sales.UpdateSaleAsync(id, request);
+        return NoContent();
+    }
+
+    [HttpPut("{id:guid}/items/{itemId:guid}"), Authorize(Policy = "AdminOrManager")]
+    public async Task<IActionResult> UpdateItem(Guid id, Guid itemId, [FromBody] UpdateSaleItemRequest request)
+    {
+        await _sales.UpdateSaleItemAsync(id, itemId, request);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/items/{itemId:guid}"), Authorize(Policy = "AdminOrManager")]
+    public async Task<IActionResult> RemoveItem(Guid id, Guid itemId)
+    {
+        await _sales.RemoveSaleItemAsync(id, itemId);
+        return NoContent();
+    }
+
+    [HttpPost("{id:guid}/items"), Authorize(Policy = "AdminOrManager")]
+    public async Task<IActionResult> AddItem(Guid id, [FromBody] CreateSaleItemRequest request)
+    {
+        var sale = await _sales.AddSaleItemAsync(id, request);
+        return Ok(sale);
+    }
+
     [HttpGet("{id:guid}/invoice")]
     public async Task<IActionResult> GetInvoice(Guid id)
     {
@@ -64,6 +92,21 @@ public class SalesController : ControllerBase
         var pdf = _invoicePdf.GenerateInvoice(sale, shopSettings);
 
         return File(pdf, "application/pdf", $"invoice-{sale.InvoiceNumber}.pdf");
+    }
+
+    [HttpGet("{id:guid}/excel")]
+    public async Task<IActionResult> GetExcel(Guid id)
+    {
+        var sale = await _sales.GetByIdAsync(id);
+        if (sale == null) return NotFound();
+
+        if (User.IsInRole("Salesperson") && sale.CreatedBy != GetUserId())
+            return Forbid();
+
+        var bytes = await _sales.ExportSaleExcelAsync(id);
+        return File(bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"sale-{sale.InvoiceNumber}.xlsx");
     }
 
     private async Task<Application.DTOs.Reports.ShopSettingsDto> GetShopSettingsAsync()
